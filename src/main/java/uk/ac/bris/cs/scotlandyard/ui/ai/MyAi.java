@@ -7,6 +7,7 @@ import io.atlassian.fugue.Pair;
 import uk.ac.bris.cs.scotlandyard.model.Ai;
 import uk.ac.bris.cs.scotlandyard.model.Board;
 import uk.ac.bris.cs.scotlandyard.model.Move;
+import uk.ac.bris.cs.scotlandyard.model.Piece;
 
 public class MyAi implements Ai {
 
@@ -36,11 +37,45 @@ public class MyAi implements Ai {
 		 */
 
 
+
+
 		// SCORING FUNCTION
 
-
+		System.out.println("Blue: " + board.getDetectiveLocation(Piece.Detective.BLUE).orElseThrow().toString());
+		System.out.println("Red: " + board.getDetectiveLocation(Piece.Detective.RED).orElseThrow().toString());
+		System.out.println("Green: " + board.getDetectiveLocation(Piece.Detective.GREEN).orElseThrow().toString());
+		System.out.println("White: " + board.getDetectiveLocation(Piece.Detective.WHITE).orElseThrow().toString());
+		System.out.println("Yellow: " + board.getDetectiveLocation(Piece.Detective.YELLOW).orElseThrow().toString());
 
 		var moves = board.getAvailableMoves().asList();
-		return moves.get(new Random().nextInt(moves.size()));
+
+		boolean areWeMrX = moves.get(0).commencedBy() == Piece.MrX.MRX;
+
+		for (var move : moves) {
+			int destination = move.accept(new Move.Visitor<Integer>() {
+				@Override
+				public Integer visit(Move.SingleMove m){
+					return m.destination;
+				}
+
+				@Override
+				public Integer visit(Move.DoubleMove m){
+					return m.destination2;
+				}
+			});
+
+			System.out.println("from " + move.source() + " to " + destination);
+
+		}
+
+		System.out.println("\n=========================================\n");
+
+		if (areWeMrX) {
+			return moves.get(new Random().nextInt(moves.size()));
+		} else {
+			return moves.get(new Random().nextInt(moves.size()));
+		}
+
+
 	}
 }

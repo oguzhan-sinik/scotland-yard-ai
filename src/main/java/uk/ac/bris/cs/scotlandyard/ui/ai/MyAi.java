@@ -42,18 +42,20 @@ public class MyAi implements Ai {
 		int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
 
 		int totalScore = 0;
+		int minDist = Integer.MAX_VALUE;
+
 		for (int detLoc : detectiveLocs) {
 			int dist = (distFromMrX[detLoc] == Integer.MAX_VALUE) ? 0 : distFromMrX[detLoc];
-
-			if (dist <= 1) totalScore -= 10000;
+			if (dist <= 1) return -100000;
+			if (dist < minDist) minDist = dist;
 			totalScore += dist * dist;
 		}
+		totalScore += minDist * 50;
 		return totalScore;
 	}
 
 	private boolean canDetectiveReach(Board board, int from, int to) {
 		var transports = board.getSetup().graph.edgeValueOrDefault(from, to, ImmutableSet.of());
-		// Detectives have TAXI, BUS, UNDERGROUND — never SECRET, so FERRY is off-limits
 		for (ScotlandYard.Transport t : transports) {
 			if (t != ScotlandYard.Transport.FERRY) return true;
 		}
@@ -82,7 +84,6 @@ public class MyAi implements Ai {
 		for (ScotlandYard.Transport t : transports) {
 			if (tickets.getCount(t.requiredTicket()) > 0) return true;
 		}
-		// SECRET ticket works as a wildcard for any transport
 		return tickets.getCount(ScotlandYard.Ticket.SECRET) > 0;
 	}
 
@@ -142,6 +143,7 @@ public class MyAi implements Ai {
 				if (beta <= alpha) break; // detective already have a better option to go
 			}
 
+			if (bestScore == Integer.MIN_VALUE) return -100000;
 			return bestScore;
 
 		} else {

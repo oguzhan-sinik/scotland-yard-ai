@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
+
+import com.google.common.collect.ImmutableSet;
 import jakarta.annotation.Nonnull;
 import io.atlassian.fugue.Pair;
 import uk.ac.bris.cs.scotlandyard.model.*;
@@ -39,21 +41,23 @@ public class MyAi implements Ai {
 		int maxNode = dijkstraAlgorithm.maxNode(graph);
 		int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
 
-		if (detectiveLocs.contains(mrXLoc)) return -1000;
-
 		int totalScore = 0;
 		for (int detLoc : detectiveLocs) {
 			int dist = (distFromMrX[detLoc] == Integer.MAX_VALUE) ? 0 : distFromMrX[detLoc];
 
-			if (dist <= 1) {
-				totalScore -=50;
-			} else if (dist <= 3) {
-				totalScore -= 10 * dist;
-			} else {
-				totalScore += dist * dist;
-			}
+			if (dist <= 1) totalScore -= 10000;
+			totalScore += dist * dist;
 		}
 		return totalScore;
+	}
+
+	private boolean canDetectiveReach(Board board, int from, int to) {
+		var transports = board.getSetup().graph.edgeValueOrDefault(from, to, ImmutableSet.of());
+		// Detectives have TAXI, BUS, UNDERGROUND — never SECRET, so FERRY is off-limits
+		for (ScotlandYard.Transport t : transports) {
+			if (t != ScotlandYard.Transport.FERRY) return true;
+		}
+		return false;
 	}
 
 	@Nonnull public Integer destination (Move move) {
@@ -70,6 +74,16 @@ public class MyAi implements Ai {
 		});
 
 		return destination;
+	}
+
+	private boolean canMrXReach(Board board, int from, int to) {
+		var transports = board.getSetup().graph.edgeValueOrDefault(from, to, ImmutableSet.of());
+		var tickets = board.getPlayerTickets(Piece.MrX.MRX).orElseThrow();
+		for (ScotlandYard.Transport t : transports) {
+			if (tickets.getCount(t.requiredTicket()) > 0) return true;
+		}
+		// SECRET ticket works as a wildcard for any transport
+		return tickets.getCount(ScotlandYard.Ticket.SECRET) > 0;
 	}
 
 	@Nonnull public Move pickMove(Board board, boolean isMrX){
@@ -119,6 +133,7 @@ public class MyAi implements Ai {
 			for (int adjacent : board.getSetup().graph.adjacentNodes(mrXLoc)) {
 
 				if (detectiveLocs.contains(adjacent)) continue;
+				if (!canMrXReach(board, mrXLoc, adjacent)) continue;
 
 				int score = minimaxAlg(board, false, depth -1, adjacent, detectiveLocs, alpha, beta);
 
@@ -132,22 +147,24 @@ public class MyAi implements Ai {
 		} else {
 			var graph = board.getSetup().graph;
 			int maxNode = dijkstraAlgorithm.maxNode(graph);
-			int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode); // run ONCE
+			int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode); // ONE call
 
 			List<Integer> potNewDetLocs = new ArrayList<>(detectiveLocs);
+
 			for (int i = 0; i < potNewDetLocs.size(); i++) {
 				int currentLoc = potNewDetLocs.get(i);
 				int bestAdj = currentLoc;
 				int bestScore = Integer.MAX_VALUE;
 
 				for (int adj : graph.adjacentNodes(currentLoc)) {
+					if (!canDetectiveReach(board, currentLoc, adj)) continue;
 					boolean occupiedByAnotherDet = false;
 					for (int j = 0; j < potNewDetLocs.size(); j++) {
 						if (potNewDetLocs.get(j) == adj) { occupiedByAnotherDet = true; break; }
 					}
 					if (occupiedByAnotherDet) continue;
 
-					int dist = distFromMrX[adj]; // O(1) lookup instead of 4 Dijkstras
+					int dist = distFromMrX[adj]; // O(1) lookup, no Dijkstra
 					if (dist < bestScore) { bestScore = dist; bestAdj = adj; }
 				}
 				potNewDetLocs.set(i, bestAdj);

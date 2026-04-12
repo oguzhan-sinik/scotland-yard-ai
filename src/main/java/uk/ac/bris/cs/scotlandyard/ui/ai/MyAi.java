@@ -64,27 +64,36 @@ public class MyAi implements Ai {
 
 		var moves = board.getAvailableMoves().asList();
 		Move bestMove = moves.get(0);
-		int bestScore = Integer.MIN_VALUE;
-		List<Integer> detectiveLocs = new ArrayList<>();
 
-		for (Piece piece : board.getPlayers()) {
-			if (piece.isDetective()) board.getDetectiveLocation((Piece.Detective) piece).ifPresent(detectiveLocs::add);
-		}
+		if (isMrX) {
+			int bestScore = Integer.MIN_VALUE;
+			List<Integer> detectiveLocs = new ArrayList<>();
 
-		for (Move move : moves) {
-
-			int destination = destination(move);
-
-			int newScore = minimaxAlg(board, false, 3, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
-
-			if(newScore > bestScore){
-				System.out.println("\nnew best score " + newScore + " Previous best score " + bestScore);
-				bestScore = newScore;
-				bestMove = move;
+			for (Piece piece : board.getPlayers()) {
+				if (piece.isDetective()) board.getDetectiveLocation((Piece.Detective) piece).ifPresent(detectiveLocs::add);
 			}
+
+			for (Move move : moves) {
+
+				int destination = destination(move);
+
+				int newScore = minimaxAlg(board, false, 3, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
+
+				if(newScore > bestScore){
+					System.out.println("\nnew best score " + newScore + " Previous best score " + bestScore);
+					bestScore = newScore;
+					bestMove = move;
+				}
+			}
+
+			return bestMove;
+		} else {
+			System.out.println("We are not capable of playing detectives yet!");
+			return bestMove;
 		}
 
-		return bestMove;
+
+
 	}
 
 	@Nonnull public Integer minimaxAlg(Board board, boolean isMrX, int depth, int mrXLoc, List<Integer> detectiveLocs, int alpha, int beta){

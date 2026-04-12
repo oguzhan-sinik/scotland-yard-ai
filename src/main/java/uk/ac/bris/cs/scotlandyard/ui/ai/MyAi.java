@@ -46,11 +46,26 @@ public class MyAi implements Ai {
 
 		for (int detLoc : detectiveLocs) {
 			int dist = (distFromMrX[detLoc] == Integer.MAX_VALUE) ? 0 : distFromMrX[detLoc];
-			if (dist <= 1) return -100000;
-			if (dist < minDist) minDist = dist;
+			// Additive penalties instead of hard returns
+			if (dist <= 1) totalScore -= 10000;
+			else if (dist <= 2) totalScore -= 3000;
+			else if (dist <= 3) totalScore -= 500;
+
 			totalScore += dist * dist;
+
+			if (dist < minDist) minDist = dist;
 		}
-		totalScore += minDist * 50;
+
+		if (minDist != Integer.MAX_VALUE) totalScore += minDist * 50;
+
+		// Bonus for having many adjacent escape routes
+		int escapeRoutes = 0;
+		for (int adj : graph.adjacentNodes(mrXLoc)) {
+			boolean blocked = false;
+			for (int det : detectiveLocs) { if (det == adj) { blocked = true; break; } }
+			if (!blocked) escapeRoutes++;
+		}
+		totalScore += escapeRoutes * 30;
 		return totalScore;
 	}
 
@@ -104,14 +119,20 @@ public class MyAi implements Ai {
 
 				int destination = destination(move);
 
-				int newScore = minimaxAlg(board, false, 20, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
+				int newScore = minimaxAlg(board, false, 3, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
 
 				if(newScore > bestScore){
-					System.out.println("\nnew best score " + newScore + " Previous best score " + bestScore);
 					bestScore = newScore;
 					bestMove = move;
 				}
+
+				System.out.printf("Move -> node %3d | score: %d | ticket: %s%n",
+						destination, newScore, move.tickets());
+
 			}
+
+			System.out.printf(">>> CHOSEN: node %d | score: %d%n",
+					destination(bestMove), bestScore);
 
 			return bestMove;
 		} else {

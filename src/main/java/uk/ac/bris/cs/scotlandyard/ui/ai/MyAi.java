@@ -13,6 +13,7 @@ public class MyAi implements Ai {
 
 	@Nonnull @Override public String name() { return "helele"; }
 
+
 	@Nonnull @Override public Move pickMove(
 			@Nonnull Board board,
 			Pair<Long, TimeUnit> timeoutPair) {
@@ -30,11 +31,12 @@ public class MyAi implements Ai {
 
 
 
-		return new Random().nextInt(5);
+		return dijkstraAlgorithm.score(board, from, to);
 	}
 
 	@Nonnull public Integer nodeScore(Board board, int mrXLoc, List<Integer> detectiveLocs){
 		int totalScore = 0;
+
 
 		for (int detLoc : detectiveLocs) {
 			int dist = stepsRequired(board, detLoc, mrXLoc);

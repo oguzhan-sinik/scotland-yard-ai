@@ -43,7 +43,7 @@ public class dijkstraAlgorithm {
         dist[source] = 0;
 
         PriorityQueue<int[]> pq = new PriorityQueue<>(Comparator.comparingInt(v -> v[0]));
-        pq.add(new int[]{source, 0});
+        pq.add(new int[]{0, source});
 
         while (!pq.isEmpty()) {
             int[] entry = pq.poll();

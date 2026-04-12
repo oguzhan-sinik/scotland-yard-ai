@@ -18,26 +18,16 @@ public class dijkstraAlgorithm {
         ImmutableValueGraph<Integer, ImmutableSet<ScotlandYard.Transport>> graph = board.getSetup().graph;
         int maxNode = maxNode(graph);
         int[] minDist = mergeDist(graph, mrXloc, maxNode);
-        int total = 0;
-        for (Piece piece : board.getPlayers()) {
-            if (!piece.isDetective()) continue;
-            Piece.Detective detective = (Piece.Detective) piece;
-            int detLoc = board.getDetectiveLocation(detective)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Detective " + detective + " has no location"));
-            int dist = minDist[detLoc];
-            if (dist != Integer.MAX_VALUE) total += dist;
-        }
         
         return minDist[from];
     }
 
-    private static int maxNode(
+    public static int maxNode(
             ImmutableValueGraph<Integer, ImmutableSet<ScotlandYard.Transport>> graph) {
         return graph.nodes().stream().mapToInt(Integer::intValue).max().orElse(0);
     }
 
-    static int[] dijktraTarget(ImmutableValueGraph<Integer, ImmutableSet<ScotlandYard.Transport>> graph, int source, ScotlandYard.Transport transport, int maxNode){
+    public static int[] dijktraTarget(ImmutableValueGraph<Integer, ImmutableSet<ScotlandYard.Transport>> graph, int source, ScotlandYard.Transport transport, int maxNode){
         int[] dist = new int[maxNode + 1];
         Arrays.fill(dist, Integer.MAX_VALUE);
         dist[source] = 0;
@@ -66,7 +56,7 @@ public class dijkstraAlgorithm {
         return dist;
     }
 
-    static int[] mergeDist(ImmutableValueGraph<Integer, ImmutableSet<ScotlandYard.Transport>> graph, int source, int maxNode) {
+    public static int[] mergeDist(ImmutableValueGraph<Integer, ImmutableSet<ScotlandYard.Transport>> graph, int source, int maxNode) {
         int[] minDist = new int[maxNode + 1];
         Arrays.fill(minDist, Integer.MAX_VALUE);
         minDist[source] = 0;

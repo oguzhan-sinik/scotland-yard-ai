@@ -34,15 +34,16 @@ public class MyAi implements Ai {
 		return dijkstraAlgorithm.score(board, from, to);
 	}
 
-	@Nonnull public Integer nodeScore(Board board, int mrXLoc, List<Integer> detectiveLocs){
+	public Integer nodeScore(Board board, int mrXLoc, List<Integer> detectiveLocs) {
+		var graph = board.getSetup().graph;
+		int maxNode = dijkstraAlgorithm.maxNode(graph);
+		int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
+
 		int totalScore = 0;
-
-
 		for (int detLoc : detectiveLocs) {
-			int dist = stepsRequired(board, detLoc, mrXLoc);
+			int dist = (distFromMrX[detLoc] == Integer.MAX_VALUE) ? 0 : distFromMrX[detLoc];
 			totalScore += dist * dist;
 		}
-
 		return totalScore;
 	}
 
@@ -120,37 +121,29 @@ public class MyAi implements Ai {
 			return bestScore;
 
 		} else {
+			var graph = board.getSetup().graph;
+			int maxNode = dijkstraAlgorithm.maxNode(graph);
+			int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode); // run ONCE
 
 			List<Integer> potNewDetLocs = new ArrayList<>(detectiveLocs);
-
 			for (int i = 0; i < potNewDetLocs.size(); i++) {
 				int currentLoc = potNewDetLocs.get(i);
 				int bestAdj = currentLoc;
 				int bestScore = Integer.MAX_VALUE;
 
-				for (int adj : board.getSetup().graph.adjacentNodes(currentLoc)) {
+				for (int adj : graph.adjacentNodes(currentLoc)) {
 					boolean occupiedByAnotherDet = false;
 					for (int j = 0; j < potNewDetLocs.size(); j++) {
-						if (potNewDetLocs.get(j) == adj){
-							occupiedByAnotherDet = true;
-							break;
-						}
+						if (potNewDetLocs.get(j) == adj) { occupiedByAnotherDet = true; break; }
 					}
-
 					if (occupiedByAnotherDet) continue;
 
-					int dist = stepsRequired(board, adj, mrXLoc);
-					if (dist < bestScore) {
-						bestScore = dist;
-						bestAdj = adj;
-					}
+					int dist = distFromMrX[adj]; // O(1) lookup instead of 4 Dijkstras
+					if (dist < bestScore) { bestScore = dist; bestAdj = adj; }
 				}
-
 				potNewDetLocs.set(i, bestAdj);
 			}
-
-			return minimaxAlg(board, true, depth -1, mrXLoc, potNewDetLocs, alpha, beta);
-
+			return minimaxAlg(board, true, depth - 1, mrXLoc, potNewDetLocs, alpha, beta);
 		}
 
 

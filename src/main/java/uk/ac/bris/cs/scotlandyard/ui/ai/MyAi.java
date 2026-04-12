@@ -46,19 +46,18 @@ public class MyAi implements Ai {
 
 		for (int detLoc : detectiveLocs) {
 			int dist = (distFromMrX[detLoc] == Integer.MAX_VALUE) ? 0 : distFromMrX[detLoc];
-			// Additive penalties instead of hard returns
+
 			if (dist <= 1) totalScore -= 10000;
 			else if (dist <= 2) totalScore -= 3000;
 			else if (dist <= 3) totalScore -= 500;
 
-			totalScore += dist * dist;
+			totalScore += minDist * minDist;
 
 			if (dist < minDist) minDist = dist;
 		}
 
 		if (minDist != Integer.MAX_VALUE) totalScore += minDist * 50;
 
-		// Bonus for having many adjacent escape routes
 		int escapeRoutes = 0;
 		for (int adj : graph.adjacentNodes(mrXLoc)) {
 			boolean blocked = false;
@@ -66,6 +65,13 @@ public class MyAi implements Ai {
 			if (!blocked) escapeRoutes++;
 		}
 		totalScore += escapeRoutes * 30;
+
+		List<Boolean> revealRounds = board.getSetup().moves;
+		int currentRound = board.getMrXTravelLog().size();
+		boolean nextIsReveal = currentRound < revealRounds.size() && revealRounds.get(currentRound);
+
+		if (nextIsReveal) totalScore += minDist * 100;
+
 		return totalScore;
 	}
 
@@ -119,7 +125,7 @@ public class MyAi implements Ai {
 
 				int destination = destination(move);
 
-				int newScore = minimaxAlg(board, false, 3, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
+				int newScore = minimaxAlg(board, false, 5, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
 
 				if(newScore > bestScore){
 					bestScore = newScore;

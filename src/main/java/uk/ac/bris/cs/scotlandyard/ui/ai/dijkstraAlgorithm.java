@@ -14,7 +14,7 @@ public class dijkstraAlgorithm {
 
     private dijkstraAlgorithm() {}
 
-    public static int score(Board board, int mrXloc) {
+    public static int score(Board board, int mrXloc, int from) {
         ImmutableValueGraph<Integer, ImmutableSet<ScotlandYard.Transport>> graph = board.getSetup().graph;
         int maxNode = maxNode(graph);
         int[] minDist = mergeDist(graph, mrXloc, maxNode);
@@ -28,7 +28,8 @@ public class dijkstraAlgorithm {
             int dist = minDist[detLoc];
             if (dist != Integer.MAX_VALUE) total += dist;
         }
-        return total;
+        
+        return minDist[from];
     }
 
     private static int maxNode(

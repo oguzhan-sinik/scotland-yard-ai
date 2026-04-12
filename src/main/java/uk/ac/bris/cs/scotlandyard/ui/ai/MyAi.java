@@ -11,7 +11,7 @@ import uk.ac.bris.cs.scotlandyard.model.*;
 
 public class MyAi implements Ai {
 
-	@Nonnull @Override public String name() { return "helele"; }
+	@Nonnull @Override public String name() { return "biTERIM"; }
 
 
 	@Nonnull @Override public Move pickMove(
@@ -39,10 +39,19 @@ public class MyAi implements Ai {
 		int maxNode = dijkstraAlgorithm.maxNode(graph);
 		int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
 
+		if (detectiveLocs.contains(mrXLoc)) return -1000;
+
 		int totalScore = 0;
 		for (int detLoc : detectiveLocs) {
 			int dist = (distFromMrX[detLoc] == Integer.MAX_VALUE) ? 0 : distFromMrX[detLoc];
-			totalScore += dist * dist;
+
+			if (dist <= 1) {
+				totalScore -=50;
+			} else if (dist <= 3) {
+				totalScore -= 10 * dist;
+			} else {
+				totalScore += dist * dist;
+			}
 		}
 		return totalScore;
 	}
@@ -80,7 +89,7 @@ public class MyAi implements Ai {
 
 				int destination = destination(move);
 
-				int newScore = minimaxAlg(board, false, 3, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
+				int newScore = minimaxAlg(board, false, 20, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
 
 				if(newScore > bestScore){
 					System.out.println("\nnew best score " + newScore + " Previous best score " + bestScore);

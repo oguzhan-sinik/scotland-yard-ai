@@ -17,27 +17,6 @@ public class MyAi implements Ai {
 			@Nonnull Board board,
 			Pair<Long, TimeUnit> timeoutPair) {
 
-		/*
-
-		TODO:
-		 Implement a scoring function,
-		 a game tree,
-		 and a Mini-Max based AI for MrX and enhance it with Alpha-beta Pruning and other features
-
-		 For MrX, a good move is usually one that will get away from detectives and open up a wide variety of moves.
-
-		 So when writing the scoring functions, we can first get possible places that MrX can go. And using Dijkstra's
-		 algorithm we can get shorthest ways that each detective can go those places. And select one node that
-		 farthest from all detectives. Before takign the medians, taking the square of distances should be put
-		 us to the best move.
-
-
-		(OPTIONAL) for detectives, a good move is one that will either capture or get close to MrX.
-		 */
-
-
-		// SCORING FUNCTION
-
 		boolean areWeMrX = board.getAvailableMoves().asList().get(0).commencedBy() == Piece.MrX.MRX;
 
 		return pickMove(board, areWeMrX);
@@ -59,60 +38,111 @@ public class MyAi implements Ai {
 
 		for (int detLoc : detectiveLocs) {
 			int dist = stepsRequired(board, detLoc, mrXLoc);
-			totalScore += dist;
+			totalScore += dist * dist;
 		}
 
 		return totalScore;
+	}
+
+	@Nonnull public Integer destination (Move move) {
+		int destination = move.accept(new Move.Visitor<Integer>() {
+			@Override
+			public Integer visit(Move.SingleMove move) {
+				return move.destination;
+			}
+
+			@Override
+			public Integer visit(Move.DoubleMove move) {
+				return move.destination2;
+			}
+		});
+
+		return destination;
 	}
 
 	@Nonnull public Move pickMove(Board board, boolean isMrX){
 
 		var moves = board.getAvailableMoves().asList();
 		Move bestMove = moves.get(0);
-		int bestScore = 0;
-		int newScore = 0;
+		int bestScore = Integer.MIN_VALUE;
+		List<Integer> detectiveLocs = new ArrayList<>();
+
+		for (Piece piece : board.getPlayers()) {
+			if (piece.isDetective()) board.getDetectiveLocation((Piece.Detective) piece).ifPresent(detectiveLocs::add);
+		}
 
 		for (Move move : moves) {
 
-			//Board.GameState nextState = ((Board.GameState) board).advance(move);
-			//int newScore = minimaxAlg(nextState, isMrX, 4);
+			int destination = destination(move);
 
-			//System.out.println("\nnew score " + newScore + "best score ever " + bestScore);
+			int newScore = minimaxAlg(board, false, 3, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
 
 			if(newScore > bestScore){
+				System.out.println("\nnew best score " + newScore + " Previous best score " + bestScore);
 				bestScore = newScore;
 				bestMove = move;
 			}
 		}
+
 		return bestMove;
 	}
 
-	@Nonnull public Integer minimaxAlg(Board board, boolean isMrX, int depth, int mrXLoc, List<Integer> detectiveLocs){
+	@Nonnull public Integer minimaxAlg(Board board, boolean isMrX, int depth, int mrXLoc, List<Integer> detectiveLocs, int alpha, int beta){
 
-		List<Integer> scores = new ArrayList<>();
-		var moves = board.getAvailableMoves().asList();
+		if (depth == 0) return nodeScore(board, mrXLoc, detectiveLocs);
 
-		if (depth == 0) {
-			int totalScore = 0;
-			for ( int detectiveLoc : detectiveLocs) {
-				int dist = stepsRequired(board, detectiveLoc, mrXLoc);
-				totalScore = dist * dist;
+		if (isMrX) {
+
+			int bestScore = Integer.MIN_VALUE;
+
+			for (int adjacent : board.getSetup().graph.adjacentNodes(mrXLoc)) {
+
+				if (detectiveLocs.contains(adjacent)) continue;
+
+				int score = minimaxAlg(board, false, depth -1, adjacent, detectiveLocs, alpha, beta);
+
+				if (score > bestScore) bestScore = score;
+				if (bestScore > alpha) alpha = bestScore;
+				if (beta <= alpha) break; // detective already have a better option to go
 			}
-			return  totalScore;
+
+			return bestScore;
+
+		} else {
+
+			List<Integer> potNewDetLocs = new ArrayList<>(detectiveLocs);
+
+			for (int i = 0; i < potNewDetLocs.size(); i++) {
+				int currentLoc = potNewDetLocs.get(i);
+				int bestAdj = currentLoc;
+				int bestScore = Integer.MAX_VALUE;
+
+				for (int adj : board.getSetup().graph.adjacentNodes(currentLoc)) {
+					boolean occupiedByAnotherDet = false;
+					for (int j = 0; j < potNewDetLocs.size(); j++) {
+						if (potNewDetLocs.get(j) == adj){
+							occupiedByAnotherDet = true;
+							break;
+						}
+					}
+
+					if (occupiedByAnotherDet) continue;
+
+					int dist = stepsRequired(board, adj, mrXLoc);
+					if (dist < bestScore) {
+						bestScore = dist;
+						bestAdj = adj;
+					}
+				}
+
+				potNewDetLocs.set(i, bestAdj);
+			}
+
+			return minimaxAlg(board, true, depth -1, mrXLoc, potNewDetLocs, alpha, beta);
+
 		}
 
-		int bestScore = 0;
 
-		for (int adjacent : board.getSetup().graph.adjacentNodes(mrXLoc)){
-
-			if (detectiveLocs.contains(adjacent)) continue;
-
-			int score = minimaxAlg(board, isMrX, depth - 1, mrXLoc, detectiveLocs);
-			if (score > bestScore) bestScore = score;
-
-		}
-
-		return isMrX ? Collections.max(scores) : Collections.min(scores);
 	}
 
 }

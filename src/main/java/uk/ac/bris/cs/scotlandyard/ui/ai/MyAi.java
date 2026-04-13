@@ -22,6 +22,7 @@ public class MyAi implements Ai {
 
 		boolean areWeMrX = board.getAvailableMoves().asList().get(0).commencedBy() == Piece.MrX.MRX;
 
+
 		return pickMove(board, areWeMrX);
 
 	}
@@ -51,9 +52,11 @@ public class MyAi implements Ai {
 			else if (dist <= 2) totalScore -= 3000;
 			else if (dist <= 3) totalScore -= 500;
 
-			totalScore += minDist * minDist;
+			totalScore += dist * dist;
+
 
 			if (dist < minDist) minDist = dist;
+
 		}
 
 		if (minDist != Integer.MAX_VALUE) totalScore += minDist * 50;
@@ -64,7 +67,10 @@ public class MyAi implements Ai {
 			for (int det : detectiveLocs) { if (det == adj) { blocked = true; break; } }
 			if (!blocked) escapeRoutes++;
 		}
-		totalScore += escapeRoutes * 30;
+
+		if (escapeRoutes <= 2) totalScore -= 1000;
+
+		totalScore += escapeRoutes * 150;
 
 		List<Boolean> revealRounds = board.getSetup().moves;
 		int currentRound = board.getMrXTravelLog().size();

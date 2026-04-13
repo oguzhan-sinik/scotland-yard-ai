@@ -46,15 +46,18 @@ public class MyAi implements Ai {
 
 		for (int detLoc : detectiveLocs) {
 			int dist = (distFromMrX[detLoc] == Integer.MAX_VALUE) ? 0 : distFromMrX[detLoc];
-			// Additive penalties instead of hard returns
-			if (dist <= 1) totalScore -= 10000;
-			else if (dist <= 2) totalScore -= 3000;
-			else if (dist <= 3) totalScore -= 500;
+			if (dist <= 1) return -100000;
+			if (dist < minDist) minDist = dist;
+
 
 			totalScore += dist * dist;
 
-			if (dist < minDist) minDist = dist;
+
 		}
+
+		if (minDist != Integer.MAX_VALUE) totalScore += minDist * 50;
+		int mobility = graph.adjacentNodes(mrXLoc).size();
+		totalScore += mobility * 10;
 
 		if (minDist != Integer.MAX_VALUE) totalScore += minDist * 50;
 

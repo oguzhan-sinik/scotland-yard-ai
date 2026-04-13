@@ -26,16 +26,6 @@ public class MyAi implements Ai {
 
 	}
 
-	@Nonnull public Integer stepsRequired(Board board, int from, int to){
-
-		// TODO Dijkstra algorithm for finding the shortest path
-		// We have a starting point and dest point. The score we want as a return is the shortest distance.
-
-
-
-		return dijkstraAlgorithm.score(board, from, to);
-	}
-
 	public Integer nodeScore(Board board, int mrXLoc, List<Integer> detectiveLocs) {
 		var graph = board.getSetup().graph;
 		int maxNode = dijkstraAlgorithm.maxNode(graph);
@@ -56,12 +46,7 @@ public class MyAi implements Ai {
 		}
 
 		if (minDist != Integer.MAX_VALUE) totalScore += minDist * 50;
-		int mobility = graph.adjacentNodes(mrXLoc).size();
-		totalScore += mobility * 10;
 
-		if (minDist != Integer.MAX_VALUE) totalScore += minDist * 50;
-
-		// Bonus for having many adjacent escape routes
 		int escapeRoutes = 0;
 		for (int adj : graph.adjacentNodes(mrXLoc)) {
 			boolean blocked = false;

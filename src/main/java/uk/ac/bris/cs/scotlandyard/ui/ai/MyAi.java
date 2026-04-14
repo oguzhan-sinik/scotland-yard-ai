@@ -20,7 +20,7 @@ public class MyAi implements Ai {
 			@Nonnull Board board,
 			Pair<Long, TimeUnit> timeoutPair) {
 
-		// our AI is only capable of playing MrX, so we check if we are playing MrX
+		// checking which player we are!
 		boolean areWeMrX = board.getAvailableMoves().asList().get(0).commencedBy() == Piece.MrX.MRX;
 
 		return pickBestMove(board, areWeMrX, timeoutPair.left());
@@ -34,9 +34,10 @@ public class MyAi implements Ai {
 		Move bestMove = moves.get(0);
 
 		if (isMrX) {
+			// We play MrX through minimax algorithm
 			return minimaxAlg.pickBestMove(board, timeToMove);
 		} else {
-			// System.out.println("We are not capable of playing detectives yet!");
+			// We play detectives through Monte-Carlo Algorithm
 			return bestMove;
 		}
 	}

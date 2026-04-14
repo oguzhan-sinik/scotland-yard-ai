@@ -14,14 +14,9 @@ public class dijkstraAlgorithm {
 
     private dijkstraAlgorithm() {}
 
-    public static int score(Board board, int mrXloc, int from) {
-        ImmutableValueGraph<Integer, ImmutableSet<ScotlandYard.Transport>> graph = board.getSetup().graph;
-        int maxNode = maxNode(graph);
-        int[] minDist = mergeDist(graph, mrXloc, maxNode);
-        
-        return minDist[from];
-    }
+    //  handle all shortest path calcs on the graph
 
+    // we find the highest numbered node, so we can size our distance arrays properly
     public static int maxNode(
             ImmutableValueGraph<Integer, ImmutableSet<ScotlandYard.Transport>> graph) {
         return graph.nodes().stream().mapToInt(Integer::intValue).max().orElse(0);

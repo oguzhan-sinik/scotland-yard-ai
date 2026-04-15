@@ -126,13 +126,53 @@ public class Ismcts {
     }
 
 
-    private static double simulation(Board.GameState state, int Depth){
+    // Gets the final destination of a move, handling both single and double moves.
+    private static int getMoveDestination(Move move) {
+        return move.accept(new Move.Visitor<Integer>() {
+            @Override public Integer visit(Move.SingleMove m) { return m.destination; }
+            @Override public Integer visit(Move.DoubleMove m) { return m.destination2; }
+        });
+    }
+
+    // Dijkstra-based leaf evaluation — replaces the flat 0.3 heuristic.
+    // Runs Dijkstra once from mrXLoc, then checks each detective's distance.
+    // Score is from the detectives' perspective: higher = detectives are closer = better for them.
+    //   d=0 → 1.0  (detective on same node, about to win)
+    //   d=1 → 0.5  (adjacent, serious danger)
+    //   d=3 → 0.25 (nearby)
+    //   d=6 → 0.14 (far, MrX has a comfortable lead)
+    private static double dijkstraLeafEval(Board.GameState state, int mrXLoc) {
+        var graph = state.getSetup().graph;
+        int maxNode = dijkstraAlgorithm.maxNode(graph);
+        int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
+
+        int minDist = Integer.MAX_VALUE;
+        for (Piece p : state.getPlayers()) {
+            if (p.isDetective()) {
+                int detLoc = state.getDetectiveLocation((Piece.Detective) p).orElse(-1);
+                if (detLoc != -1) {
+                    int d = (distFromMrX[detLoc] == Integer.MAX_VALUE) ? 200 : distFromMrX[detLoc];
+                    if (d < minDist) minDist = d;
+                }
+            }
+        }
+
+        if (minDist == Integer.MAX_VALUE) return 0.1; // all detectives unreachable, MrX is safe
+        return 1.0 / (1.0 + minDist);
+    }
+
+    // mrXLoc is threaded in so we can track where MrX ends up after random rollout moves.
+    private static double simulation(Board.GameState state, int Depth, int mrXLoc){
         Board.GameState currentState = state;
         int moves = 0;
+        int currentMrXLoc = mrXLoc;
 
         while (currentState.getWinner().isEmpty() && moves < Depth){
             List<Move> legal = currentState.getAvailableMoves().asList();
             Move random = legal.get(rng.nextInt(legal.size()));
+            if (random.commencedBy() == Piece.MrX.MRX) {
+                currentMrXLoc = getMoveDestination(random);
+            }
             currentState = currentState.advance(random);
             moves++;
         }
@@ -142,7 +182,9 @@ public class Ismcts {
             else return 1;
         }
 
-        return 0.3; // assume mrX has advantage, might want to use Dijktra in future
+        // Was: return 0.3  (flat, blind guess)
+        // Now: Dijkstra tells us how close detectives actually are to MrX
+        return dijkstraLeafEval(currentState, currentMrXLoc);
     }
 
     private static void backpropagate(IsmctsNode node, double score) {
@@ -177,17 +219,21 @@ public class Ismcts {
         IsmctsNode root = new IsmctsNode(null, null);
         IsmctsTreePolicy policy = new IsmctsTreePolicy();
 
+        // Pre-compute possible locations once — the board doesn't change during pickMove
+        List<Integer> posLocs = Ismcts.forwardPass(board);
+
         while(System.currentTimeMillis() - startTime < limit){
-            List<Integer> posLocs = Ismcts.forwardPass(board);
             if (posLocs.isEmpty()) {break;}
-            int guessLoc = posLocs.get(new Random().nextInt(posLocs.size()));
+            int guessLoc = posLocs.get(rng.nextInt(posLocs.size()));
 
             Board.GameState fakeState = FakeGameStateGenerator.buildFakeGameState(board, guessLoc);
-            Pair<IsmctsNode, Board.GameState> treeResult = policy.treePolicy(root, fakeState);
-            IsmctsNode selectNode = treeResult.left();
-            Board.GameState stateAtNode = treeResult.right();
+            // treePolicy now also returns mrXLoc at the leaf, needed for Dijkstra eval
+            IsmctsTreePolicy.TreePolicyResult treeResult = policy.treePolicy(root, fakeState, guessLoc);
+            IsmctsNode selectNode = treeResult.node();
+            Board.GameState stateAtNode = treeResult.state();
+            int mrXLocAtNode = treeResult.mrXLoc();
 
-            double score = simulation(stateAtNode, 15);
+            double score = simulation(stateAtNode, 15, mrXLocAtNode);
             backpropagate(selectNode, score);
         }
 

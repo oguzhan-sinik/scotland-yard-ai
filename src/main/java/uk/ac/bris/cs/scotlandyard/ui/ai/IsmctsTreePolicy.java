@@ -1,22 +1,24 @@
 package uk.ac.bris.cs.scotlandyard.ui.ai;
-import io.atlassian.fugue.Pair;
 import uk.ac.bris.cs.scotlandyard.model.Board;
 import uk.ac.bris.cs.scotlandyard.model.Move;
+import uk.ac.bris.cs.scotlandyard.model.Piece;
 
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Random;
-import java.util.concurrent.TimeUnit;
 
 public class IsmctsTreePolicy {
     private final Random rng = new Random();
 
-    private Pair<IsmctsNode, Board.GameState> expand(IsmctsNode node, Board.GameState state, List<Move> untried) {
-        Move randomUntried = untried.get(rng.nextInt(untried.size()));
-        IsmctsNode child = node.addChild(randomUntried);
-        Board.GameState next = state.advance(randomUntried);
+    // Bundles what treePolicy returns so we can pass mrXLoc into simulation
+    public record TreePolicyResult(IsmctsNode node, Board.GameState state, int mrXLoc) {}
 
-        return new Pair<>(child, next);
+    // Gets the final destination of any move (single or double)
+    private static int getMoveDestination(Move move) {
+        return move.accept(new Move.Visitor<Integer>() {
+            @Override public Integer visit(Move.SingleMove m) { return m.destination; }
+            @Override public Integer visit(Move.DoubleMove m) { return m.destination2; }
+        });
     }
 
     private IsmctsNode getBest(List<IsmctsNode> children) {
@@ -32,19 +34,27 @@ public class IsmctsTreePolicy {
         }
 
         return bestChild;
-
     }
 
-    public Pair<IsmctsNode, Board.GameState> treePolicy(IsmctsNode root, Board.GameState state) {
+    // mrXLoc is threaded through so the caller knows where MrX ended up at the leaf node,
+    // which is needed for Dijkstra-based leaf evaluation in the simulation step.
+    public TreePolicyResult treePolicy(IsmctsNode root, Board.GameState state, int mrXLoc) {
         IsmctsNode currentNode = root;
         Board.GameState currentState = state;
+        int currentMrXLoc = mrXLoc;
 
         while(currentState.getWinner().isEmpty()){
             List<Move> legal = currentState.getAvailableMoves().asList();
             List<Move> untried = currentNode.getUntriedMoves(legal);
 
             if(!untried.isEmpty()){
-                return expand(currentNode, currentState, untried);
+                Move randomUntried = untried.get(rng.nextInt(untried.size()));
+                IsmctsNode child = currentNode.addChild(randomUntried);
+                if (randomUntried.commencedBy() == Piece.MrX.MRX) {
+                    currentMrXLoc = getMoveDestination(randomUntried);
+                }
+                Board.GameState next = currentState.advance(randomUntried);
+                return new TreePolicyResult(child, next, currentMrXLoc);
             }
 
             List<IsmctsNode> legalChildren = new ArrayList<>();
@@ -56,10 +66,11 @@ public class IsmctsTreePolicy {
             if (legalChildren.isEmpty()) {break;}
 
             currentNode = getBest(legalChildren);
+            if (currentNode.incomingMove.commencedBy() == Piece.MrX.MRX) {
+                currentMrXLoc = getMoveDestination(currentNode.incomingMove);
+            }
             currentState = currentState.advance(currentNode.incomingMove);
         }
-        return new Pair<>(currentNode, currentState);
+        return new TreePolicyResult(currentNode, currentState, currentMrXLoc);
     }
-
-
 }

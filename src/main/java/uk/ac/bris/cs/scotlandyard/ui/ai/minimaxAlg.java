@@ -290,13 +290,14 @@ public class minimaxAlg {
         int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
 
         // we ding where each detective would most likely to move
-        List<Integer> potNewDetLocs = potentialDetLocFinder(board, detectiveLocs, distFromMrX);
+        List<Integer> potNewDetLocs = potentialDetLocFinder(board, detectiveLocs, distFromMrX, mrXLoc);
+        if (potNewDetLocs == null) return -100000;  // MrX got caught
 
         return minimaxAlgorithm(board, true, depth - 1, mrXLoc, potNewDetLocs, alpha, beta); // it is mrX's turn again
     }
 
     // for each detective we pick the adjacent node that get them closest to mrX
-    private static List<Integer> potentialDetLocFinder (Board board, List<Integer> detectiveLocs, int[] distFromMrX) {
+    private static List<Integer> potentialDetLocFinder (Board board, List<Integer> detectiveLocs, int[] distFromMrX, int mrXLoc) {
 
         var graph = board.getSetup().graph;
         List<Integer> potNewDetLocs = new ArrayList<>(detectiveLocs);
@@ -308,6 +309,7 @@ public class minimaxAlg {
 
             for (int adj : graph.adjacentNodes(currentLoc)) {
 
+                if (adj == mrXLoc) return null;
                 // skips if detective can't reach, or occupied by another detective
                 if (!canDetectiveReach(board, currentLoc, adj)) continue;
                 boolean occupiedByAnotherDet = false;
@@ -316,6 +318,7 @@ public class minimaxAlg {
                 if (occupiedByAnotherDet) continue;
 
                 int dist = distFromMrX[adj]; // O(1) lookup, no Dijkstra
+
                 if (dist < bestScore) { bestScore = dist; bestAdj = adj; }
             }
             potNewDetLocs.set(i, bestAdj);

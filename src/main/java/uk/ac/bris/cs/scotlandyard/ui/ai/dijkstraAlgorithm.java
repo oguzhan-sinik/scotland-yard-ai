@@ -60,25 +60,13 @@ public class dijkstraAlgorithm {
         int[] minDist = new int[maxNode + 1];
         Arrays.fill(minDist, Integer.MAX_VALUE);
         minDist[source] = 0;
-        PriorityQueue<int[]> pq = new PriorityQueue<>(Comparator.comparingInt(v -> v[0]));
-        pq.add(new int[]{0, source});
 
-        while (!pq.isEmpty()) {
-            int[] entry = pq.poll();
-            int d = entry[0], u = entry[1];
-            if (d > minDist[u]) continue;
-
-            for (int v : graph.adjacentNodes(u)) {
-                if (!graph.edgeValueOrDefault(u, v, ImmutableSet.of()).isEmpty()) {
-                    int nd = d + 1;
-                    if (nd < minDist[v]){
-                        minDist[v] = nd;
-                        pq.add(new int[]{nd, v});
-                    }
-                }
+        for (ScotlandYard.Transport transport : ScotlandYard.Transport.values()) {
+            int[] d = dijktraTarget(graph, source, transport, maxNode);
+            for (int node = 1; node <= maxNode; node++) {
+                if (d[node] < minDist[node]) minDist[node] = d[node];
             }
         }
-
         return minDist;
 
     }

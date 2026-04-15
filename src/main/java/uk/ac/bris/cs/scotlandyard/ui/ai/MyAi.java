@@ -22,7 +22,6 @@ public class MyAi implements Ai {
 
 		boolean areWeMrX = board.getAvailableMoves().asList().get(0).commencedBy() == Piece.MrX.MRX;
 
-
 		return pickMove(board, areWeMrX);
 
 	}
@@ -47,37 +46,26 @@ public class MyAi implements Ai {
 
 		for (int detLoc : detectiveLocs) {
 			int dist = (distFromMrX[detLoc] == Integer.MAX_VALUE) ? 0 : distFromMrX[detLoc];
-
+			// Additive penalties instead of hard returns
 			if (dist <= 1) totalScore -= 10000;
 			else if (dist <= 2) totalScore -= 3000;
 			else if (dist <= 3) totalScore -= 500;
 
 			totalScore += dist * dist;
 
-
 			if (dist < minDist) minDist = dist;
-
 		}
 
 		if (minDist != Integer.MAX_VALUE) totalScore += minDist * 50;
 
+		// Bonus for having many adjacent escape routes
 		int escapeRoutes = 0;
 		for (int adj : graph.adjacentNodes(mrXLoc)) {
 			boolean blocked = false;
 			for (int det : detectiveLocs) { if (det == adj) { blocked = true; break; } }
 			if (!blocked) escapeRoutes++;
 		}
-
-		if (escapeRoutes <= 2) totalScore -= 1000;
-
-		totalScore += escapeRoutes * 150;
-
-		List<Boolean> revealRounds = board.getSetup().moves;
-		int currentRound = board.getMrXTravelLog().size();
-		boolean nextIsReveal = currentRound < revealRounds.size() && revealRounds.get(currentRound);
-
-		if (nextIsReveal) totalScore += minDist * 100;
-
+		totalScore += escapeRoutes * 30;
 		return totalScore;
 	}
 
@@ -131,7 +119,7 @@ public class MyAi implements Ai {
 
 				int destination = destination(move);
 
-				int newScore = minimaxAlg(board, false, 5, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
+				int newScore = minimaxAlg(board, false, 3, destination, detectiveLocs, Integer.MIN_VALUE, Integer.MAX_VALUE);
 
 				if(newScore > bestScore){
 					bestScore = newScore;

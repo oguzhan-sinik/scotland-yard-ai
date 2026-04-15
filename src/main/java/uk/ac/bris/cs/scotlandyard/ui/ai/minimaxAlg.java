@@ -189,7 +189,7 @@ public class minimaxAlg {
             else if (usesSecret && minDist > 3) score -= 200;
         } else {
             if (usesSecret) {
-                if (minDist > 3) score -= countSecretTicket(move) * 100; // leave secret tickets for next rounds
+                if (minDist > 3) score -= countSecretTicket(move) * 1500; // leave secret tickets for next rounds
             }
         }
 
@@ -206,8 +206,8 @@ public class minimaxAlg {
         // double moves only we are in extremely danger
         if (isDoubleMove(move)) {
             if (minDist <= 2) score += 500;
-            else if (minDist <= 4) score -= 1000;
-            else score -= 3000;
+            else if (minDist <= 4) score -= 3000;
+            else score -= 7000;
         }
 
         return score;

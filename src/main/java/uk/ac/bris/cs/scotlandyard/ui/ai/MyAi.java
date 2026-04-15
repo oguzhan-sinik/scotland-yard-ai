@@ -38,7 +38,6 @@ public class MyAi implements Ai {
 			return minimaxAlg.pickBestMove(board, timeToMove.left());
 		} else {
 			// We play detectives through Monte-Carlo Algorithm
-			System.out.println("detective play");
 			return Ismcts.pickMove(board, timeToMove);
 		}
 	}

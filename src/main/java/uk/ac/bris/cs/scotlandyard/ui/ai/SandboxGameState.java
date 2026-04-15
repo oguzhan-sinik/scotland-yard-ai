@@ -245,6 +245,7 @@ public class SandboxGameState implements ScotlandYard.Factory<Board.GameState> {
 
                 // TODO consider the rules of secret moves here
                 //  add moves to the destination via a secret ticket if there are any left with the player
+
                 if(player.has(ScotlandYard.Ticket.SECRET)){
                     moves.add(new Move.SingleMove(player.piece(), source, ScotlandYard.Ticket.SECRET, destination));
                 }
@@ -279,12 +280,12 @@ public class SandboxGameState implements ScotlandYard.Factory<Board.GameState> {
                         }
                     }
 
-                    boolean enoughSecret = singleMove.ticket == ScotlandYard.Ticket.SECRET
+                    boolean enoughTicket = singleMove.ticket == ScotlandYard.Ticket.SECRET
                             ? player.hasAtLeast(ScotlandYard.Ticket.SECRET, 2)
                             : player.has(ScotlandYard.Ticket.SECRET);
 
-                    if(enoughSecret){
-                        moves.add(new Move.DoubleMove(player.piece(), source, singleMove.ticket, singleMove.destination, ScotlandYard.Ticket.SECRET, destination));
+                    if(enoughTicket){
+                        moves.add(new Move.DoubleMove(player.piece(), source, singleMove.ticket, singleMove.destination,ScotlandYard.Ticket.SECRET, destination));
                     }
                 }
             }

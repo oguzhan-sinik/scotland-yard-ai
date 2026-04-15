@@ -52,6 +52,11 @@ public class minimaxAlg {
             totalScore += dist * dist;
         }
 
+        if (dangerCount == 0 && minDist > 3) {
+            System.out.println("Safe enough to skip some penalties");
+            return totalScore;
+        }
+
         // if any detective is right next to mrX we apply a big penalty
         if (dangerCount > 0) totalScore -= 5000 + (dangerCount * 2000);
 
@@ -150,11 +155,11 @@ public class minimaxAlg {
                     bestMove = move;
                 }
 
-                //System.out.printf("Move -> node %3d | score: %d | ticket: %s%n", destination, newScore, move.tickets());
+                System.out.printf("Move -> node %3d | score: %d | ticket: %s%n", destination, newScore, move.tickets());
 
             }
 
-            //System.out.printf(">>> CHOSEN: node %d | score: %d%n", destination(bestMove), bestScore);
+            System.out.printf(">>> CHOSEN: node %d | score: %d%n", destination(bestMove), bestScore);
 
             return bestMove;
 

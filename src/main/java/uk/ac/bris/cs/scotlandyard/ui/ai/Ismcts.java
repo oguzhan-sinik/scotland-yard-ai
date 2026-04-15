@@ -161,7 +161,28 @@ public class Ismcts {
         return 1.0 / (1.0 + minDist);
     }
 
-    // mrXLoc is threaded in so we can track where MrX ends up after random rollout moves.
+    // ε for detective rollout: 20% random, 80% greedy.
+    // Keeps simulations diverse while still making detectives chase MrX intelligently.
+    private static final double EPSILON = 0.2;
+
+    // Detectives want to get CLOSER to MrX.
+    // Runs Dijkstra once from mrXLoc, picks the legal destination with minimum distance.
+    private static Move greedyDetectiveMove(List<Move> legal, Board.GameState state, int mrXLoc) {
+        var graph = state.getSetup().graph;
+        int maxNode = dijkstraAlgorithm.maxNode(graph);
+        int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
+
+        Move bestMove = null;
+        int bestDist = Integer.MAX_VALUE;
+        for (Move move : legal) {
+            int dest = getMoveDestination(move);
+            int d = (distFromMrX[dest] == Integer.MAX_VALUE) ? 200 : distFromMrX[dest];
+            if (d < bestDist) { bestDist = d; bestMove = move; }
+        }
+        return (bestMove != null) ? bestMove : legal.get(rng.nextInt(legal.size()));
+    }
+
+    // MrX stays fully random — detectives use ε-greedy (greedy with probability 1-EPSILON).
     private static double simulation(Board.GameState state, int Depth, int mrXLoc){
         Board.GameState currentState = state;
         int moves = 0;
@@ -169,11 +190,21 @@ public class Ismcts {
 
         while (currentState.getWinner().isEmpty() && moves < Depth){
             List<Move> legal = currentState.getAvailableMoves().asList();
-            Move random = legal.get(rng.nextInt(legal.size()));
-            if (random.commencedBy() == Piece.MrX.MRX) {
-                currentMrXLoc = getMoveDestination(random);
+            Move chosen;
+
+            boolean mrXTurn = legal.get(0).commencedBy() == Piece.MrX.MRX;
+            if (mrXTurn || rng.nextDouble() < EPSILON) {
+                // MrX always random; detectives random EPSILON of the time
+                chosen = legal.get(rng.nextInt(legal.size()));
+            } else {
+                // Detective greedy: chase MrX's known location in this determinization
+                chosen = greedyDetectiveMove(legal, currentState, currentMrXLoc);
             }
-            currentState = currentState.advance(random);
+
+            if (chosen.commencedBy() == Piece.MrX.MRX) {
+                currentMrXLoc = getMoveDestination(chosen);
+            }
+            currentState = currentState.advance(chosen);
             moves++;
         }
 
@@ -182,8 +213,6 @@ public class Ismcts {
             else return 1;
         }
 
-        // Was: return 0.3  (flat, blind guess)
-        // Now: Dijkstra tells us how close detectives actually are to MrX
         return dijkstraLeafEval(currentState, currentMrXLoc);
     }
 

@@ -279,8 +279,12 @@ public class SandboxGameState implements ScotlandYard.Factory<Board.GameState> {
                         }
                     }
 
-                    if(player.has(ScotlandYard.Ticket.SECRET)){
-                        moves.add(new Move.DoubleMove(player.piece(), source, singleMove.ticket, singleMove.destination,ScotlandYard.Ticket.SECRET, destination));
+                    boolean enoughSecret = singleMove.ticket == ScotlandYard.Ticket.SECRET
+                            ? player.hasAtLeast(ScotlandYard.Ticket.SECRET, 2)
+                            : player.has(ScotlandYard.Ticket.SECRET);
+
+                    if(enoughSecret){
+                        moves.add(new Move.DoubleMove(player.piece(), source, singleMove.ticket, singleMove.destination, ScotlandYard.Ticket.SECRET, destination));
                     }
                 }
             }

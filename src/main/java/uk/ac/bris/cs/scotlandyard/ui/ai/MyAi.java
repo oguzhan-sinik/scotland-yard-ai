@@ -23,22 +23,23 @@ public class MyAi implements Ai {
 		// checking which player we are!
 		boolean areWeMrX = board.getAvailableMoves().asList().get(0).commencedBy() == Piece.MrX.MRX;
 
-		return pickBestMove(board, areWeMrX, timeoutPair.left());
+		return pickBestMove(board, areWeMrX, timeoutPair);
 
 	}
 
 
-	@Nonnull public Move pickBestMove(Board board, boolean isMrX, long timeToMove){
+	@Nonnull public Move pickBestMove(Board board, boolean isMrX, Pair<Long, TimeUnit> timeToMove){
 
 		var moves = board.getAvailableMoves().asList();
 		Move bestMove = moves.get(0);
 
 		if (isMrX) {
 			// We play MrX through minimax algorithm
-			return minimaxAlg.pickBestMove(board, timeToMove);
+			return minimaxAlg.pickBestMove(board, timeToMove.left());
 		} else {
 			// We play detectives through Monte-Carlo Algorithm
-			return bestMove;
+			System.out.println("detective play");
+			return Ismcts.pickMove(board, timeToMove);
 		}
 	}
 

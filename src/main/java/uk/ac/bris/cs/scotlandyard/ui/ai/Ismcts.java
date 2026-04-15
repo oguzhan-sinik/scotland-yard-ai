@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit;
 public class Ismcts {
     // @Param rng : a random seed for simulation step. Initialized here for optimization purposes
     // @Param anchorData : A package function to store an anchor point
-    private final Random rng =  new Random();
+    private static final Random rng =  new Random();
     public record anchorData(Optional<Integer> loc, List<ScotlandYard.Ticket> ticketSinceAnchor){}
 
     // getDet : the Information Set
@@ -126,7 +126,7 @@ public class Ismcts {
     }
 
 
-    private double simulation(Board.GameState state, int Depth){
+    private static double simulation(Board.GameState state, int Depth){
         Board.GameState currentState = state;
         int moves = 0;
 
@@ -145,7 +145,7 @@ public class Ismcts {
         return 0.3; // assume mrX has advantage, might want to use Dijktra in future
     }
 
-    private void backpropagate(IsmctsNode node, double score) {
+    private static void backpropagate(IsmctsNode node, double score) {
         IsmctsNode current = node;
         while (current != null) {
             current.update(score);
@@ -153,7 +153,7 @@ public class Ismcts {
         }
     }
 
-    private Move getBestMove(IsmctsNode root) {
+    private static Move getBestMove(IsmctsNode root) {
         IsmctsNode bestNode = null;
         int maxVisits = -1;
 
@@ -170,7 +170,7 @@ public class Ismcts {
 
     //buralar MyAI'da olucak/olabilecek kısımlar
 
-    public Move pickMove(Board board, Pair<Long, TimeUnit> timeoutPair){
+    public static Move pickMove(Board board, Pair<Long, TimeUnit> timeoutPair){
         long startTime = System.currentTimeMillis();
         long limit = timeoutPair.right().toMillis(timeoutPair.left()) - 500; // safety buffer. May need change
 

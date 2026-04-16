@@ -2,11 +2,7 @@ package uk.ac.bris.cs.scotlandyard.ui.ai;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import uk.ac.bris.cs.scotlandyard.model.Board;
-import uk.ac.bris.cs.scotlandyard.model.MyGameStateFactory;
-import uk.ac.bris.cs.scotlandyard.model.Piece;
-import uk.ac.bris.cs.scotlandyard.model.Player;
-import uk.ac.bris.cs.scotlandyard.model.ScotlandYard;
+import uk.ac.bris.cs.scotlandyard.model.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -55,9 +51,18 @@ public class FakeGameStateGenerator {
             }
         }
 
-        //yes I used my factory :D
-        //proof of my knowledge in factory design pattern
-        MyGameStateFactory factory = new MyGameStateFactory();
-        return factory.build(board.getSetup(), fakeMrX, ImmutableList.copyOf(detectives));
+        // Use YOUR custom factory, not the default one
+        SandboxGameState factory = new SandboxGameState();
+
+        // 1. Figure out whose turn it ACTUALLY is right now in the real game
+        ImmutableSet<Piece> que = board.getAvailableMoves().stream()
+                .map(Move::commencedBy)
+                .collect(ImmutableSet.toImmutableSet());
+
+        // 2. Grab the real travel log so we don't accidentally rewind to Turn 0
+        ImmutableList<LogEntry> currentLog = board.getMrXTravelLog();
+
+        // 3. Inject the exact current timeline into the sandbox
+        return factory.createFakeState(board.getSetup(), que, currentLog, fakeMrX, detectives);
     }
 }

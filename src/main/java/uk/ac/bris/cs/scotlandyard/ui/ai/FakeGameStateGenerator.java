@@ -2,7 +2,11 @@ package uk.ac.bris.cs.scotlandyard.ui.ai;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import uk.ac.bris.cs.scotlandyard.model.*;
+import uk.ac.bris.cs.scotlandyard.model.Board;
+import uk.ac.bris.cs.scotlandyard.model.MyGameStateFactory;
+import uk.ac.bris.cs.scotlandyard.model.Piece;
+import uk.ac.bris.cs.scotlandyard.model.Player;
+import uk.ac.bris.cs.scotlandyard.model.ScotlandYard;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -53,10 +57,7 @@ public class FakeGameStateGenerator {
 
         //yes I used my factory :D
         //proof of my knowledge in factory design pattern
-        SandboxGameState factory = new SandboxGameState();
-        ImmutableSet<Piece> que = board.getAvailableMoves().stream().map(Move::commencedBy).collect(ImmutableSet.toImmutableSet());
-        ImmutableList<LogEntry> currentLog = board.getMrXTravelLog();
-
-        return factory.createFakeState(board.getSetup(), que, currentLog, fakeMrX, detectives);
+        MyGameStateFactory factory = new MyGameStateFactory();
+        return factory.build(board.getSetup(), fakeMrX, ImmutableList.copyOf(detectives));
     }
 }

@@ -6,20 +6,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 // Tree architecture of ISMCTS
-// Each node is an Information set rather than a complete game state
+// representation of a single node in tree
 // Burak Alican Kilinc
 
 public class IsmctsNode {
-    public final Move incomingMove;
-    public final IsmctsNode parent;
-    public final List<IsmctsNode> children;
+    public final Move incomingMove; // moved played to reach current state
+    public final IsmctsNode parent; // null if root
+    public final List<IsmctsNode> children; // expanded childs
 
-    public int visits;
-    public double totalReward;
+    public int visits; // number of thimes this node was visited during search
+    public double totalReward; // cumulative results of sims that passed this node
 
-    // IsmctsNode : Construction of a node
-    // @input incomingMove : holds stored gameState's Move
-    // @input parent : parent node
+    // IsmctsNode : constructor
     public IsmctsNode(Move incomingMove, IsmctsNode parent) {
         this.parent =  parent;
         this.incomingMove = incomingMove;
@@ -28,36 +26,39 @@ public class IsmctsNode {
         this.totalReward = 0.0;
     }
 
-    // getChild : checks if this node has a child representing a move
-    // @input move : parents move
-    // @output (has a child) ? child : null
+    // getChild : checks if a move is already expanded somewhere in the tree
+    // @input move : move we want to search
+    // @output : (expansion exists) ? (expansion child) : null
     public IsmctsNode getChild(Move move){
         for (IsmctsNode child : children){
             if (child.incomingMove.equals(move)){return child;}
         }
 
-        return null; // 50 coursework mark mistake
+        return null; // there goes another billion
     }
 
-    // addChild : creates a new child
-    // @input move : childs move
-    // @output child : new child
+    // addChild : expands the tree
+    // @input move : childs move value
+    // @output : the new child
     public IsmctsNode addChild(Move move){
         IsmctsNode child = new  IsmctsNode(move, this);
         this.children.add(child);
         return child;
     }
 
-    // update : updates the nodes reward values after a simulation completes
-    // @input reward : result of the simulation. 1.0 for win / 0.0 for loss
+    // update : this is for backpropagation
+    // updates statistics
+    // @input reward : reward won in a single node
     public void update(double reward){
         this.visits++;
         this.totalReward += reward;
     }
 
-    // getUCB : standard Upper Confidence Bound 1 (UCB1) for this node
-    // balance between exploration and exploitation
-    // input : exploration constant. standard value is square root of 2
+    // getUCB : calculates the Upper Confidence Bound 1
+    // this formula balances exploration (trying different moves)
+    // and exploitation (picking moves that are known to win)
+    // @input c : UCB1 constant
+    // @output : UCB1 value
     public double getUCB(double c){
         if (this.visits == 0) {return Double.MAX_VALUE;}
 
@@ -66,6 +67,10 @@ public class IsmctsNode {
         return exploitation + exploration;
     }
 
+    // getUntriedMoves : returns a list of untried legal moves
+    // helper method for expansion phase
+    // @input move : list of all legal moves
+    // @oputput : list of untried moves
     public List<Move> getUntriedMoves(List<Move> moves){
         List<Move> untriedMoves = new ArrayList<>();
         for (Move Legal : moves){
@@ -73,6 +78,7 @@ public class IsmctsNode {
             for (IsmctsNode child : children){
                 if (child.incomingMove.equals(Legal)){alreadyExpanded = true; break;}
             }
+            // If theres no existing child for the specific move, we havent tried it yet
             if (!alreadyExpanded) {untriedMoves.add(Legal);}
         }
         return untriedMoves;

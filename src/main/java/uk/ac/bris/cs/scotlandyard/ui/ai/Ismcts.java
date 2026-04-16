@@ -125,33 +125,35 @@ public class Ismcts {
         return Locs;
     }
 
-
-    // Gets the final destination of a move, handling both single and double moves.
-    private static int getMoveDestination(Move move) {
+    // getDest : helper method to get destinations
+    // uses visitor pattern
+    // @input move : a move that we want to wind its destination
+    // @output destination : self explanatory
+    private static int getDest(Move move) {
         return move.accept(new Move.Visitor<Integer>() {
             @Override public Integer visit(Move.SingleMove m) { return m.destination; }
             @Override public Integer visit(Move.DoubleMove m) { return m.destination2; }
         });
     }
 
-    // Dijkstra-based leaf evaluation — replaces the flat 0.3 heuristic.
-    // Runs Dijkstra once from mrXLoc, then checks each detective's distance.
-    // Score is from the detectives' perspective: higher = detectives are closer = better for them.
-    //   d=0 → 1.0  (detective on same node, about to win)
-    //   d=1 → 0.5  (adjacent, serious danger)
-    //   d=3 → 0.25 (nearby)
-    //   d=6 → 0.14 (far, MrX has a comfortable lead)
-    private static double dijkstraLeafEval(Board.GameState state, int mrXLoc) {
+    // dijkstraEV : main reason this method exists is that we need a way to score
+    // after either max depth is reached or time is out.
+    // returning a constant was an easy choice bu I decided to normalize the dijkstra distance
+    // between mrX and the closest detective and use it.
+    // @input state : current simulated state
+    // @input mrXLoc : mrX's guessed location
+    // @output : normalized minimum distance between the detectives and mrX
+    private static double dijkstraEV(Board.GameState state, int mrXLoc) {
         var graph = state.getSetup().graph;
         int maxNode = dijkstraAlgorithm.maxNode(graph);
-        int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
+        int[] distMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
 
         int minDist = Integer.MAX_VALUE;
         for (Piece p : state.getPlayers()) {
             if (p.isDetective()) {
                 int detLoc = state.getDetectiveLocation((Piece.Detective) p).orElse(-1);
                 if (detLoc != -1) {
-                    int d = (distFromMrX[detLoc] == Integer.MAX_VALUE) ? 200 : distFromMrX[detLoc];
+                    int d = (distMrX[detLoc] == Integer.MAX_VALUE) ? 200 : distMrX[detLoc];
                     if (d < minDist) minDist = d;
                 }
             }
@@ -161,7 +163,36 @@ public class Ismcts {
         return 1.0 / (1.0 + minDist);
     }
 
-    // mrXLoc is threaded in so we can track where MrX ends up after random rollout moves.
+    // greedy : a cool addition to reduce noise
+    // instead of picking a move from legal moves randomly,
+    // we pick the move that minimises distance to mrX's most likely position
+    // with probability 1−ε, and random with probability ε.
+    // basically bringing heuristics for move decision instead of complete randomness.
+    private static final double EPSILON = 0.2; // heuristic constant.
+    // @input legal : a list of legal moves
+    // @input state : game state thats being simulated
+    // @input mrXLoc : mrX's guessed location
+    private static Move greedy(List<Move> legal, Board.GameState state, int mrXLoc) {
+        var graph = state.getSetup().graph;
+        int maxNode = dijkstraAlgorithm.maxNode(graph);
+        int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
+
+        Move bestMove = null;
+        int bestDist = Integer.MAX_VALUE;
+        for (Move move : legal) {
+            int dest = getDest(move);
+            int d = (distFromMrX[dest] == Integer.MAX_VALUE) ? 200 : distFromMrX[dest];
+            if (d < bestDist) { bestDist = d; bestMove = move; }
+        }
+        return (bestMove != null) ? bestMove : legal.get(rng.nextInt(legal.size()));
+    }
+
+    // simulation : this is where simulation happens.
+    // this method executes a simulated playout from the current nodes state
+    // @input state: current nodes state
+    // @input Depth : max simulation depth
+    // @input mrXLoc : guessed location of mrX
+    // @output : winrate with values between 0 and 1
     private static double simulation(Board.GameState state, int Depth, int mrXLoc){
         Board.GameState currentState = state;
         int moves = 0;
@@ -169,25 +200,44 @@ public class Ismcts {
 
         while (currentState.getWinner().isEmpty() && moves < Depth){
             List<Move> legal = currentState.getAvailableMoves().asList();
-            Move random = legal.get(rng.nextInt(legal.size()));
-            if (random.commencedBy() == Piece.MrX.MRX) {
-                currentMrXLoc = getMoveDestination(random);
+            Move chosen;
+
+            // mrX always plays randomly
+            // detectives play randomly a certain percentage of time for exploration
+            // rest of the time, we play greedily
+            boolean mrXTurn = legal.get(0).commencedBy() == Piece.MrX.MRX;
+            if (mrXTurn || rng.nextDouble() < EPSILON) {
+                chosen = legal.get(rng.nextInt(legal.size()));
+            } else {
+                chosen = greedy(legal, currentState, currentMrXLoc);
             }
-            currentState = currentState.advance(random);
+
+            // If mrX moved, we update his location so that our detectives greedy
+            // heuristics knows where to chase him
+            if (chosen.commencedBy() == Piece.MrX.MRX) {
+                currentMrXLoc = getDest(chosen);
+            }
+
+            currentState = currentState.advance(chosen);
             moves++;
         }
 
+        // If any player won we return definite scores aka 1 or 0
         if (!currentState.getWinner().isEmpty()){
             if (currentState.getWinner().contains(Piece.MrX.MRX)) return 0;
             else return 1;
         }
 
-        // Was: return 0.3  (flat, blind guess)
-        // Now: Dijkstra tells us how close detectives actually are to MrX
-        return dijkstraLeafEval(currentState, currentMrXLoc);
+        // If we hit depth limit we return the dijkstra heuristic
+        return dijkstraEV(currentState, currentMrXLoc);
     }
 
-    private static void backpropagate(IsmctsNode node, double score) {
+    // backpropagate : aka move back up the tree.
+    // after a simulation finishes this function takes the resulting score back up the tree
+    // this updates win/loss statistics, thus informing future paths
+    // @input node : current node
+    // @input score : win/loss score. can hold a value between 0 and 1
+    public static void backpropagate(IsmctsNode node, double score) {
         IsmctsNode current = node;
         while (current != null) {
             current.update(score);
@@ -195,7 +245,13 @@ public class Ismcts {
         }
     }
 
-    private static Move getBestMove(IsmctsNode root) {
+    // getBestMove : After time limit runs out this method looks at the
+    // immediate children and to decide which move to play
+    // quick side note: the best child is not the highest winrate
+    // its the most path visited
+    // @input root : root of the tree
+    // @output : move of the best child
+    public static Move getBestMove(IsmctsNode root) {
         IsmctsNode bestNode = null;
         int maxVisits = -1;
 
@@ -206,37 +262,48 @@ public class Ismcts {
             }
         }
 
-        if (bestNode == null) return null;
+        if (bestNode == null) return null; // 50 coursework mark mistake v2
         return bestNode.incomingMove;
     }
 
-    //buralar MyAI'da olucak/olabilecek kısımlar
 
+    // pickMove : entry point for the detective AI / ISMCTS
+    // @input board : current, real time board
+    // @input timeoutPair : time unit
+    // @output : AI's move decision
     public static Move pickMove(Board board, Pair<Long, TimeUnit> timeoutPair){
+        // time management
         long startTime = System.currentTimeMillis();
         long limit = timeoutPair.right().toMillis(timeoutPair.left()) - 500; // safety buffer. May need change
 
+        // tree initialization
         IsmctsNode root = new IsmctsNode(null, null);
         IsmctsTreePolicy policy = new IsmctsTreePolicy();
 
-        // Pre-compute possible locations once — the board doesn't change during pickMove
+        // information set generation
         List<Integer> posLocs = Ismcts.forwardPass(board);
 
+        // main ISMCTS loop
         while(System.currentTimeMillis() - startTime < limit){
             if (posLocs.isEmpty()) {break;}
+            // determinization step
             int guessLoc = posLocs.get(rng.nextInt(posLocs.size()));
 
+            // Selection and Expansion
             Board.GameState fakeState = FakeGameStateGenerator.buildFakeGameState(board, guessLoc);
-            // treePolicy now also returns mrXLoc at the leaf, needed for Dijkstra eval
             IsmctsTreePolicy.TreePolicyResult treeResult = policy.treePolicy(root, fakeState, guessLoc);
             IsmctsNode selectNode = treeResult.node();
             Board.GameState stateAtNode = treeResult.state();
             int mrXLocAtNode = treeResult.mrXLoc();
 
+            // Simulation
             double score = simulation(stateAtNode, 15, mrXLocAtNode);
+
+            // Backpropagation
             backpropagate(selectNode, score);
         }
 
+        // Final Selection
         return getBestMove(root);
     }
 }

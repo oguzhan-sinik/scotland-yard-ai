@@ -36,56 +36,61 @@ import java.util.concurrent.TimeUnit;
 *
 * Overall, really cool algorithm!
 * Burak Alican Kilinc
+*
+* --- Three coordination layers (see MyAi for role-assignment context) ---
+*
+* 1. coordinatedLeafEval  — evaluates tree leaves using ALL detectives (sum of
+*    inverse distances) PLUS 1-step AND 2-step escape-route coverage.  2-step
+*    analysis rewards positions that cut off MrX two moves out, not just one.
+*
+* 2. greedyDetectiveMove  — rollout heuristic that is:
+*    (a) role-aware: each detective blends 60 % target-seeking / 40 % MrX-chasing,
+*        steering each piece toward its assigned escape node,
+*    (b) anti-clustering: penalises destinations already taken by committed dets,
+*    (c) coverage-bonus: rewards covering an escape not yet threatened.
+*
+* 3. Move priors at the root  — before the ISMCTS loop, every root child is
+*    pre-seeded with a prior score = 0.5 * expected escape coverage + 0.5 *
+*    target proximity (averaged over posLocs).  The modified UCB in IsmctsNode
+*    causes independent detective searches to explore the same high-value moves
+*    first, making their plans converge even without shared tree memory.
 * */
 
-// Core class of ISMCTS
 public class Ismcts {
-    // @Param rng : a random seed for simulation step. Initialized here for optimization purposes
-    // @Param anchorData : A package function to store an anchor point
-    private static final Random rng =  new Random();
+    private static final Random rng = new Random();
     public record anchorData(Optional<Integer> loc, List<ScotlandYard.Ticket> ticketSinceAnchor){}
 
-    // getDet : the Information Set
-    // Looks at the travel log of MrX and the moves since mrX location was last reveals
-    // returns the set of all possible nodes he can be in
-    // @input board : current board
-    // @output anchorData : the info set
+    // ------------------------------------------------------------------
+    // Information-set construction (unchanged)
+    // ------------------------------------------------------------------
+
     public static anchorData getDet(Board board){
         ImmutableList<LogEntry> log = board.getMrXTravelLog();
         List<ScotlandYard.Ticket> ticketSinceAnchor = new ArrayList<>();
-
-        for (int i = log.size()-1; i >= 0; i--) { // we only care about the last reveal, hence reverse search
+        for (int i = log.size()-1; i >= 0; i--) {
             LogEntry entry = log.get(i);
-
             if(entry.location().isPresent()){
-                java.util.Collections.reverse(ticketSinceAnchor); //using reverse to return the normal log slice
+                java.util.Collections.reverse(ticketSinceAnchor);
                 return new anchorData(entry.location(), ticketSinceAnchor);
             } else {
                 ticketSinceAnchor.add(entry.ticket());
             }
         }
-
         java.util.Collections.reverse(ticketSinceAnchor);
         return new anchorData(Optional.empty(), ticketSinceAnchor);
     }
 
-    // forwardPass : iterates through LogEntry and for each ticket used, looks for adjacent nodes designated by the type of ticket
-    // @input board : current board
-    // @output possibleLocs : A list of possible locations of mrX
     public static List<Integer> forwardPass(Board board){
         anchorData data = getDet(board);
         Set<Integer> possibleLocs = new HashSet<>();
         List<Integer> detectiveLocs = getDetectiveLocs(board);
 
-        // filtering current locations of detectives
-        if (data.loc().isPresent()) {possibleLocs.add(data.loc().get());}
+        if (data.loc().isPresent()) { possibleLocs.add(data.loc().get()); }
         else {
             possibleLocs.addAll(ScotlandYard.MRX_LOCATIONS);
             possibleLocs.removeAll(detectiveLocs);
         }
 
-        // basically the same loops for the construction of moves param in MyGameStateFactory.
-        // Only difference is its just for mrX and looks through multiple tickets
         for (ScotlandYard.Ticket ticket : data.ticketSinceAnchor()) {
             Set<Integer> nextPossibleLocs = new HashSet<>();
             for (int source : possibleLocs) {
@@ -93,40 +98,30 @@ public class Ismcts {
                     if (detectiveLocs.contains(destination)) continue;
                     var transports = board.getSetup().graph.edgeValueOrDefault(source, destination, ImmutableSet.of());
                     boolean canTravel = false;
-
-                    if (ticket == ScotlandYard.Ticket.SECRET && !transports.isEmpty()) {canTravel = true;}
+                    if (ticket == ScotlandYard.Ticket.SECRET && !transports.isEmpty()) { canTravel = true; }
                     else {
                         for (ScotlandYard.Transport t : transports) {
-                            if (t.requiredTicket() == ticket) {canTravel = true; break;}
+                            if (t.requiredTicket() == ticket) { canTravel = true; break; }
                         }
                     }
-
-                    if (canTravel) {nextPossibleLocs.add(destination);}
+                    if (canTravel) { nextPossibleLocs.add(destination); }
                 }
             }
-
             possibleLocs = nextPossibleLocs;
         }
-
         return new ArrayList<>(possibleLocs);
     }
 
-    // getDetectiveLocs : helper method for returning a list of the locations of the detectives
-    // @input board : current board
-    // @output Locs : a list of locations of the detectives
     private static List<Integer> getDetectiveLocs(Board board){
-        List<Integer> Locs = new ArrayList<>();
+        List<Integer> locs = new ArrayList<>();
         for (Piece p : board.getPlayers()){
             if(p.isDetective()){
-                board.getDetectiveLocation((Piece.Detective) p).ifPresent(Locs::add);
+                board.getDetectiveLocation((Piece.Detective) p).ifPresent(locs::add);
             }
         }
-
-        return Locs;
+        return locs;
     }
 
-
-    // Gets the final destination of a move, handling both single and double moves.
     private static int getMoveDestination(Move move) {
         return move.accept(new Move.Visitor<Integer>() {
             @Override public Integer visit(Move.SingleMove m) { return m.destination; }
@@ -134,23 +129,27 @@ public class Ismcts {
         });
     }
 
-    // Two components, weighted equally:
+    // ------------------------------------------------------------------
+    // COORDINATION LAYER 1: coordinatedLeafEval (1-step + 2-step escapes)
+    // ------------------------------------------------------------------
+    // Components:
+    //   closenessScore  — normalised sum of 1/(1+d_i) over all detectives.
+    //                     Every detective getting closer improves the score.
+    //   coverageScore   — weighted combination of:
+    //       step1: fraction of MrX's immediate escape nodes covered (detective
+    //              is on or adjacent to the escape).  Weight 0.7.
+    //       step2: fraction of MrX's 2-step escape nodes covered.  These are
+    //              nodes reachable in 2 moves from MrX but not in 1 move.
+    //              "Covered" means a detective is on or adjacent to the node.
+    //              Weight 0.3.
     //
-    //   closenessScore  — normalised sum of 1/(1+d_i) for every detective.
-    //                     Every detective getting closer improves the score, not
-    //                     just the front-runner.  Range [0, 1].
-    //
-    //   coverageScore   — fraction of MrX's immediate escape nodes that are
-    //                     "covered" by a detective (detective is on or adjacent
-    //                     to the escape node).  Range [0, 1].
-    //
-    // Together they reward both "close the distance" and "surround and cut off".
+    // Final score = 0.5 * closenessScore + 0.5 * coverageScore.
     private static double coordinatedLeafEval(Board.GameState state, int mrXLoc) {
         var graph = state.getSetup().graph;
         int maxNode = dijkstraAlgorithm.maxNode(graph);
         int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
 
-        // --- Component 1: normalised sum of inverse distances ---
+        // --- closeness ---
         double sumInverse = 0.0;
         int detCount = 0;
         for (Piece p : state.getPlayers()) {
@@ -165,72 +164,107 @@ public class Ismcts {
         }
         double closenessScore = (detCount > 0) ? sumInverse / detCount : 0.0;
 
-        // A node is "covered" if any detective is on it or directly adjacent to it
-        // (i.e., could block or immediately intercept MrX there).
-        Set<Integer> mrXEscapes = new HashSet<>(graph.adjacentNodes(mrXLoc));
-        int coveredEscapes = 0;
-        for (int escape : mrXEscapes) {
+        // --- 1-step escape coverage ---
+        Set<Integer> step1 = new HashSet<>(graph.adjacentNodes(mrXLoc));
+        int coveredStep1 = 0;
+        for (int escape : step1) {
             for (Piece p : state.getPlayers()) {
                 if (p.isDetective()) {
                     int detLoc = state.getDetectiveLocation((Piece.Detective) p).orElse(-1);
                     if (detLoc != -1
                             && (detLoc == escape || graph.adjacentNodes(detLoc).contains(escape))) {
-                        coveredEscapes++;
-                        break;  // one detective is enough to cover this escape
+                        coveredStep1++;
+                        break;
                     }
                 }
             }
         }
-        double coverageScore = mrXEscapes.isEmpty() ? 0.0
-                : (double) coveredEscapes / mrXEscapes.size();
+        double step1Score = step1.isEmpty() ? 0.0 : (double) coveredStep1 / step1.size();
 
+        // --- 2-step escape coverage ---
+        // Nodes reachable from MrX in exactly 2 hops that are NOT in step1 and NOT mrXLoc itself.
+        Set<Integer> step2 = new HashSet<>();
+        for (int e1 : step1) {
+            for (int e2 : graph.adjacentNodes(e1)) {
+                if (e2 != mrXLoc && !step1.contains(e2)) step2.add(e2);
+            }
+        }
+        int coveredStep2 = 0;
+        for (int escape : step2) {
+            for (Piece p : state.getPlayers()) {
+                if (p.isDetective()) {
+                    int detLoc = state.getDetectiveLocation((Piece.Detective) p).orElse(-1);
+                    if (detLoc != -1
+                            && (detLoc == escape || graph.adjacentNodes(detLoc).contains(escape))) {
+                        coveredStep2++;
+                        break;
+                    }
+                }
+            }
+        }
+        double step2Score = step2.isEmpty() ? 0.0 : (double) coveredStep2 / step2.size();
+
+        double coverageScore = 0.7 * step1Score + 0.3 * step2Score;
         return 0.5 * closenessScore + 0.5 * coverageScore;
     }
 
-    // ε for detective rollout: 20% random, 80% coordinated-greedy.
+    // ------------------------------------------------------------------
+    // COORDINATION LAYER 2: role-aware, anti-clustering rollout
+    // ------------------------------------------------------------------
+    // roleTargets       : piece → assigned target node for this round (from MyAi)
+    // distFromTargetNode: target node → precomputed Dijkstra distances from that node
+    //
+    // Scoring per candidate destination D:
+    //   base   — if piece has a target: 60 % 1/(1+distToTarget) + 40 % 1/(1+distToMrX)
+    //            otherwise: 100 % 1/(1+distToMrX)
+    //   penalty — -0.30 if D == committed detective dest, -0.15 if adjacent to one
+    //   bonus   — +0.15 if D covers an escape not yet covered by any committed det
+
     private static final double EPSILON = 0.2;
 
-    // committedDests: destinations already chosen by detectives earlier in this
-    // round of the simulation (reset when MrX takes his turn).
-    //
-    // Scoring for each candidate destination D:
-    //   base              +1/(1+dist_to_MrX)     — get close
-    //   clustering penalty −0.30 if D == another detective's committed dest
-    //                      −0.15 if D is adjacent to a committed dest
-    //   coverage bonus    +0.15 if D covers an escape node not yet covered by
-    //                      any committed detective (spread out to new exits)
-    //
-    // The result is that detectives fan out around MrX rather than converging
-    // on the same path.
     private static Move greedyDetectiveMove(List<Move> legal,
                                              Board.GameState state,
                                              int mrXLoc,
-                                             Set<Integer> committedDests) {
+                                             Set<Integer> committedDests,
+                                             Map<Piece, Integer> roleTargets,
+                                             Map<Integer, int[]> distFromTargetNode) {
         var graph = state.getSetup().graph;
         int maxNode = dijkstraAlgorithm.maxNode(graph);
         int[] distFromMrX = dijkstraAlgorithm.mergeDist(graph, mrXLoc, maxNode);
         Set<Integer> mrXEscapes = new HashSet<>(graph.adjacentNodes(mrXLoc));
+
+        // Look up this detective's target distances (null if no target assigned)
+        Piece currentPiece = legal.get(0).commencedBy();
+        Integer targetNode = (roleTargets != null) ? roleTargets.get(currentPiece) : null;
+        int[] distFromTarget = (targetNode != null) ? distFromTargetNode.get(targetNode) : null;
 
         Move bestMove = null;
         double bestScore = -Double.MAX_VALUE;
 
         for (Move move : legal) {
             int dest = getMoveDestination(move);
-            int d = (distFromMrX[dest] == Integer.MAX_VALUE) ? 200 : distFromMrX[dest];
-            double score = 1.0 / (1.0 + d);
+            int dMrX = (distFromMrX[dest] == Integer.MAX_VALUE) ? 200 : distFromMrX[dest];
 
-            // Clustering penalty
+            double score;
+            if (distFromTarget != null) {
+                // Role-aware: blend target-seeking (primary) with MrX-chasing (secondary)
+                int dTarget = (distFromTarget[dest] == Integer.MAX_VALUE) ? 200 : distFromTarget[dest];
+                score = 0.6 * (1.0 / (1.0 + dTarget)) + 0.4 * (1.0 / (1.0 + dMrX));
+            } else {
+                score = 1.0 / (1.0 + dMrX);
+            }
+
+            // Anti-clustering penalty
             for (int committed : committedDests) {
                 if (dest == committed) {
-                    score -= 0.30;  // same node as a committed detective
+                    score -= 0.30;
                 } else if (graph.adjacentNodes(dest).contains(committed)) {
-                    score -= 0.15;  // adjacent to a committed detective
+                    score -= 0.15;
                 }
             }
 
-            // Escape-coverage bonus: reward covering an escape not yet threatened
+            // Escape-coverage bonus: reward covering an exit not yet threatened
             for (int escape : mrXEscapes) {
-                // Check whether this escape is already covered by a committed detective
                 boolean alreadyCovered = false;
                 for (int committed : committedDests) {
                     if (committed == escape || graph.adjacentNodes(committed).contains(escape)) {
@@ -238,7 +272,6 @@ public class Ismcts {
                         break;
                     }
                 }
-                // If not yet covered and we would cover it, give the bonus (once per detective)
                 if (!alreadyCovered
                         && (dest == escape || graph.adjacentNodes(dest).contains(escape))) {
                     score += 0.15;
@@ -251,32 +284,30 @@ public class Ismcts {
         return (bestMove != null) ? bestMove : legal.get(rng.nextInt(legal.size()));
     }
 
-    // simulation — drives the rollout from a leaf node.
-    // committedDests is reset each time MrX takes his turn so anti-clustering
-    // applies fresh per round of detective moves.
-    private static double simulation(Board.GameState state, int Depth, int mrXLoc){
+    private static double simulation(Board.GameState state,
+                                      int depth,
+                                      int mrXLoc,
+                                      Map<Piece, Integer> roleTargets,
+                                      Map<Integer, int[]> distFromTargetNode) {
         Board.GameState currentState = state;
         int moves = 0;
         int currentMrXLoc = mrXLoc;
-        Set<Integer> committedDetDests = new HashSet<>();  // tracks detective dests this round
+        Set<Integer> committedDetDests = new HashSet<>();
 
-        while (currentState.getWinner().isEmpty() && moves < Depth){
+        while (currentState.getWinner().isEmpty() && moves < depth) {
             List<Move> legal = currentState.getAvailableMoves().asList();
             Move chosen;
-
             boolean mrXTurn = legal.get(0).commencedBy() == Piece.MrX.MRX;
 
             if (mrXTurn) {
-                committedDetDests.clear();  // new detective round starts after MrX moves
-                chosen = legal.get(rng.nextInt(legal.size()));  // MrX always random
-            } else if (rng.nextDouble() < EPSILON) {
-                // ε-random: keeps simulations diverse
+                committedDetDests.clear();
                 chosen = legal.get(rng.nextInt(legal.size()));
-                // Still register the destination so subsequent detectives avoid clustering here
+            } else if (rng.nextDouble() < EPSILON) {
+                chosen = legal.get(rng.nextInt(legal.size()));
                 committedDetDests.add(getMoveDestination(chosen));
             } else {
-                // Coordinated greedy: chase MrX while avoiding clusters
-                chosen = greedyDetectiveMove(legal, currentState, currentMrXLoc, committedDetDests);
+                chosen = greedyDetectiveMove(legal, currentState, currentMrXLoc,
+                        committedDetDests, roleTargets, distFromTargetNode);
                 committedDetDests.add(getMoveDestination(chosen));
             }
 
@@ -287,11 +318,9 @@ public class Ismcts {
             moves++;
         }
 
-        if (!currentState.getWinner().isEmpty()){
-            if (currentState.getWinner().contains(Piece.MrX.MRX)) return 0.0;
-            else return 1.0;
+        if (!currentState.getWinner().isEmpty()) {
+            return currentState.getWinner().contains(Piece.MrX.MRX) ? 0.0 : 1.0;
         }
-
         return coordinatedLeafEval(currentState, currentMrXLoc);
     }
 
@@ -303,63 +332,136 @@ public class Ismcts {
         }
     }
 
-    // Only considers children whose incomingMove is in legalMoves.
-    // This guards against stale children from a previous round bleeding into the
-    // current selection — e.g. MrX-move nodes left over in the tree after the root
-    // was advanced past a detective turn.
+    // ------------------------------------------------------------------
+    // COORDINATION LAYER 3: move priors — seed root children before search
+    // ------------------------------------------------------------------
+    // Each legal move is given a prior = 0.5 * expectedCoverage + 0.5 * targetProximity
+    // where:
+    //   expectedCoverage  — average fraction of MrX's 1-step escapes that this move
+    //                       newly covers, averaged over all possible MrX locations
+    //                       in posLocs.  Uses only adjacency checks (no extra Dijkstra).
+    //   targetProximity   — 1/(1 + dist_to_assigned_target) if this detective has a
+    //                       role target; 0 otherwise.
+    //
+    // Seeding root children with priors means exploration proceeds in prior order
+    // (highest-prior moves tried first) and the persistent prior bonus in UCB keeps
+    // biasing toward better moves even after the initial round of visits.
+    // Because all detectives share the same evaluation function and role targets,
+    // their independent searches converge on compatible formation moves.
+    private static void seedPriors(IsmctsNode root,
+                                    Board board,
+                                    List<Move> legalMoves,
+                                    List<Integer> posLocs,
+                                    Map<Piece, Integer> roleTargets,
+                                    Map<Integer, int[]> distFromTargetNode) {
+        var graph = board.getSetup().graph;
+        List<Integer> detLocs = getDetectiveLocs(board);
+
+        for (Move move : legalMoves) {
+            int dest = getMoveDestination(move);
+
+            // --- expected escape coverage (averaged over posLocs) ---
+            double totalCoverage = 0.0;
+            for (int mrXLoc : posLocs) {
+                Set<Integer> escapes = new HashSet<>(graph.adjacentNodes(mrXLoc));
+                int newlyCovered = 0;
+                for (int escape : escapes) {
+                    boolean alreadyCovered = false;
+                    for (int dl : detLocs) {
+                        if (dl == escape || graph.adjacentNodes(dl).contains(escape)) {
+                            alreadyCovered = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyCovered
+                            && (dest == escape || graph.adjacentNodes(dest).contains(escape))) {
+                        newlyCovered++;
+                    }
+                }
+                totalCoverage += escapes.isEmpty() ? 0.0 : (double) newlyCovered / escapes.size();
+            }
+            double coverageScore = posLocs.isEmpty() ? 0.0 : totalCoverage / posLocs.size();
+
+            // --- target proximity ---
+            double targetScore = 0.0;
+            Integer target = (roleTargets != null) ? roleTargets.get(move.commencedBy()) : null;
+            if (target != null) {
+                int[] distArr = distFromTargetNode.get(target);
+                if (distArr != null) {
+                    int d = (distArr[dest] == Integer.MAX_VALUE) ? 200 : distArr[dest];
+                    targetScore = 1.0 / (1.0 + d);
+                }
+            }
+
+            // Pre-seed root child with this prior
+            IsmctsNode child = root.addChild(move);
+            child.prior = 0.5 * coverageScore + 0.5 * targetScore;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // getBestMove — filters to legal moves only (guards against stale children)
+    // ------------------------------------------------------------------
     private static Move getBestMove(IsmctsNode root, List<Move> legalMoves) {
         Set<Move> legalSet = new HashSet<>(legalMoves);
         IsmctsNode bestNode = null;
         int maxVisits = -1;
-
         for (IsmctsNode child : root.children) {
-            if (!legalSet.contains(child.incomingMove)) continue;  // skip stale/illegal children
+            if (!legalSet.contains(child.incomingMove)) continue;
             if (child.visits > maxVisits) {
                 maxVisits = child.visits;
                 bestNode = child;
             }
         }
-
-        if (bestNode == null) return null;
-        return bestNode.incomingMove;
+        return (bestNode != null) ? bestNode.incomingMove : null;
     }
 
-    // MyAi holds the tree between detective turns within the same game round
-    // and advances it by the last chosen move before calling here.  If it is the
-    // first detective in a round, a fresh root is passed in.
-    // The search loop is otherwise identical; it just runs on top of whatever
-    // visits are already in the tree, getting more signal for free.
-    public static Move pickMove(Board board, Pair<Long, TimeUnit> timeoutPair, IsmctsNode root){
+    // ------------------------------------------------------------------
+    // pickMove — main entry point
+    // ------------------------------------------------------------------
+    public static Move pickMove(Board board,
+                                 Pair<Long, TimeUnit> timeoutPair,
+                                 IsmctsNode root,
+                                 Map<Piece, Integer> roleTargets) {
         long startTime = System.currentTimeMillis();
         long limit = timeoutPair.right().toMillis(timeoutPair.left()) - 500;
 
         IsmctsTreePolicy policy = new IsmctsTreePolicy();
+        List<Integer> posLocs = forwardPass(board);
+        List<Move> legalMoves = board.getAvailableMoves().asList();
 
-        // Pre-compute possible locations once — the board doesn't change during pickMove
-        List<Integer> posLocs = Ismcts.forwardPass(board);
+        // Precompute distance arrays from each unique role-target node (once, not per iteration)
+        var graph = board.getSetup().graph;
+        int maxNode = dijkstraAlgorithm.maxNode(graph);
+        Map<Integer, int[]> distFromTargetNode = new HashMap<>();
+        if (roleTargets != null) {
+            for (int target : new HashSet<>(roleTargets.values())) {
+                distFromTargetNode.put(target, dijkstraAlgorithm.mergeDist(graph, target, maxNode));
+            }
+        }
 
-        while(System.currentTimeMillis() - startTime < limit){
-            if (posLocs.isEmpty()) {break;}
+        // Seed the root with all legal moves + computed priors before the search loop.
+        // This guarantees exploration proceeds in prior order and the prior bonus persists
+        // throughout the search (see IsmctsNode.getUCB).
+        seedPriors(root, board, legalMoves, posLocs, roleTargets, distFromTargetNode);
+
+        while (System.currentTimeMillis() - startTime < limit) {
+            if (posLocs.isEmpty()) break;
             int guessLoc = posLocs.get(rng.nextInt(posLocs.size()));
 
             Board.GameState fakeState = FakeGameStateGenerator.buildFakeGameState(board, guessLoc);
-            IsmctsTreePolicy.TreePolicyResult treeResult = policy.treePolicy(root, fakeState, guessLoc);
-            IsmctsNode selectNode = treeResult.node();
+            IsmctsTreePolicy.TreePolicyResult treeResult =
+                    policy.treePolicy(root, fakeState, guessLoc);
+            IsmctsNode selectNode   = treeResult.node();
             Board.GameState stateAtNode = treeResult.state();
-            int mrXLocAtNode = treeResult.mrXLoc();
+            int mrXLocAtNode        = treeResult.mrXLoc();
 
-            double score = simulation(stateAtNode, 15, mrXLocAtNode);
+            double score = simulation(stateAtNode, 15, mrXLocAtNode, roleTargets, distFromTargetNode);
             backpropagate(selectNode, score);
         }
 
-        // Only consider children that are legal on the CURRENT board.
-        // This prevents stale children from a prior round (e.g. MrX moves left behind
-        // after tree reuse) from being selected over freshly-explored detective moves.
-        List<Move> legalMoves = board.getAvailableMoves().asList();
         Move best = getBestMove(root, legalMoves);
-        if (best == null && !legalMoves.isEmpty()) {
-            return legalMoves.get(0);
-        }
+        if (best == null && !legalMoves.isEmpty()) return legalMoves.get(0);
         return best;
     }
 }

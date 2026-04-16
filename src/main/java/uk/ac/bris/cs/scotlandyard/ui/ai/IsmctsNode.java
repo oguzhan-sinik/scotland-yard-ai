@@ -16,6 +16,7 @@ public class IsmctsNode {
 
     public int visits;
     public double totalReward;
+    public double prior = 0.0;  // Coverage-based prior; set before the first visit (see Ismcts.seedPriors)
 
     // IsmctsNode : Construction of a node
     // @input incomingMove : holds stored gameState's Move
@@ -62,16 +63,26 @@ public class IsmctsNode {
         this.totalReward += reward;
     }
 
-    // getUCB : standard Upper Confidence Bound 1 (UCB1) for this node
-    // balance between exploration and exploitation
-    // input : exploration constant. standard value is square root of 2
-    public double getUCB(double c){
-        if (this.visits == 0) {return Double.MAX_VALUE;}
-        if (this.parent == null) {return this.totalReward / this.visits;}  // detached root guard
+    // getUCB : UCB1 augmented with a decaying move prior (AlphaGo-style).
+    //
+    // Unvisited nodes return a large base value + prior so that exploration
+    // proceeds in prior-quality order rather than arbitrarily.
+    // Once visited, the prior contributes a decaying bonus:
+    //   priorBonus = PRIOR_WEIGHT * prior / (1 + visits)
+    // At 1 visit this adds ~0.25; at 20 visits ~0.012; effectively zero by 100 visits.
+    //
+    // input : exploration constant (√2 is standard)
+    private static final double PRIOR_WEIGHT = 0.5;
 
+    public double getUCB(double c){
+        if (this.visits == 0) { return 100.0 + prior; }  // explore in prior order before first visit
+        if (this.parent == null || this.parent.visits == 0) {
+            return this.totalReward / this.visits + PRIOR_WEIGHT * prior / (1.0 + this.visits);
+        }
         double exploitation = this.totalReward / this.visits;
-        double exploration = c * Math.sqrt(Math.log(this.parent.visits) / this.visits);
-        return exploitation + exploration;
+        double exploration  = c * Math.sqrt(Math.log(this.parent.visits) / this.visits);
+        double priorBonus   = PRIOR_WEIGHT * prior / (1.0 + this.visits);
+        return exploitation + exploration + priorBonus;
     }
 
     public List<Move> getUntriedMoves(List<Move> moves){

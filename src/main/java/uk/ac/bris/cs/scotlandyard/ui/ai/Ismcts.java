@@ -81,7 +81,6 @@ public class Ismcts {
         if (data.loc().isPresent()) {possibleLocs.add(data.loc().get());}
         else {
             possibleLocs.addAll(ScotlandYard.MRX_LOCATIONS);
-            possibleLocs.removeAll(detectiveLocs);
         }
 
         // basically the same loops for the construction of moves param in MyGameStateFactory.
@@ -90,7 +89,7 @@ public class Ismcts {
             Set<Integer> nextPossibleLocs = new HashSet<>();
             for (int source : possibleLocs) {
                 for (int destination : board.getSetup().graph.adjacentNodes(source)) {
-                    if (detectiveLocs.contains(destination)) continue;
+                    //if (detectiveLocs.contains(destination)) continue;
                     var transports = board.getSetup().graph.edgeValueOrDefault(source, destination, ImmutableSet.of());
                     boolean canTravel = false;
 
@@ -107,6 +106,8 @@ public class Ismcts {
 
             possibleLocs = nextPossibleLocs;
         }
+
+        possibleLocs.removeAll(detectiveLocs);
 
         return new ArrayList<>(possibleLocs);
     }

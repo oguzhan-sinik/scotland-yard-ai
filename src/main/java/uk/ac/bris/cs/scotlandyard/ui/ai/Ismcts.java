@@ -303,11 +303,17 @@ public class Ismcts {
         }
     }
 
-    private static Move getBestMove(IsmctsNode root) {
+    // Only considers children whose incomingMove is in legalMoves.
+    // This guards against stale children from a previous round bleeding into the
+    // current selection — e.g. MrX-move nodes left over in the tree after the root
+    // was advanced past a detective turn.
+    private static Move getBestMove(IsmctsNode root, List<Move> legalMoves) {
+        Set<Move> legalSet = new HashSet<>(legalMoves);
         IsmctsNode bestNode = null;
         int maxVisits = -1;
 
         for (IsmctsNode child : root.children) {
+            if (!legalSet.contains(child.incomingMove)) continue;  // skip stale/illegal children
             if (child.visits > maxVisits) {
                 maxVisits = child.visits;
                 bestNode = child;
@@ -346,10 +352,13 @@ public class Ismcts {
             backpropagate(selectNode, score);
         }
 
-        // Fallback: if no iterations ran (e.g. zero-length time budget), pick first legal move
-        Move best = getBestMove(root);
-        if (best == null && !board.getAvailableMoves().isEmpty()) {
-            return board.getAvailableMoves().asList().get(0);
+        // Only consider children that are legal on the CURRENT board.
+        // This prevents stale children from a prior round (e.g. MrX moves left behind
+        // after tree reuse) from being selected over freshly-explored detective moves.
+        List<Move> legalMoves = board.getAvailableMoves().asList();
+        Move best = getBestMove(root, legalMoves);
+        if (best == null && !legalMoves.isEmpty()) {
+            return legalMoves.get(0);
         }
         return best;
     }

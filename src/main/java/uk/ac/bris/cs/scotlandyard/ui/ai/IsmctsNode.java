@@ -16,7 +16,7 @@ public class IsmctsNode {
 
     public int visits;
     public double totalReward;
-    public double prior = 0.0;  // Coverage-based prior; set before the first visit (see Ismcts.seedPriors)
+    public double prior = 0.0;  // Reserved for future use; currently unused (always 0)
 
     // IsmctsNode : Construction of a node
     // @input incomingMove : holds stored gameState's Move
